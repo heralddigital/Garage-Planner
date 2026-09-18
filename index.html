@@ -127,6 +127,8 @@ svg.inter{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .baybar select{padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text)}
 .manual{background:var(--note-bg);border-left:4px solid var(--lid);padding:8px 12px;font-size:15px}
 .stat.bad b{color:var(--danger)}
+.boot{fill:var(--tote);opacity:.8}
+.shoe{fill:var(--tote);opacity:.55}
 .openbox{fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:6 5}
 .shelfbtn[aria-pressed="false"]{text-decoration:line-through;opacity:.6}
 .warns{margin:0;padding:0 16px 14px;list-style:none;display:flex;flex-direction:column;gap:6px}
@@ -329,7 +331,8 @@ function sanitize(s){
   o.manual=[0,1].map(i=>{const a=mn[i];if(!Array.isArray(a)||!a.length||(i===1&&o.layout!=="L"))return null;
     return a.slice(0,12).map(x=>{x=x||{};const type=["storage","bench","tall"].includes(x.type)?x.type:"storage";
       const skip=[...new Set((Array.isArray(x.skip)?x.skip:[]).map(Number).filter(v=>Number.isInteger(v)&&v>=0&&v<30))].sort((a,b)=>a-b);
-      return{type,width:Math.round(num(x.width,150,3000,type==="tall"?400:1000)),topShelf:x.topShelf!==false,skip};});});
+      const inserts={};if(x.inserts&&typeof x.inserts==="object")Object.keys(x.inserts).forEach(k=>{const li=Number(k);if(Number.isInteger(li)&&li>=0&&li<30&&["shoes","wellies","both"].includes(x.inserts[k]))inserts[li]=x.inserts[k];});
+      return{type,width:Math.round(num(x.width,150,3000,type==="tall"?400:1000)),topShelf:x.topShelf!==false,skip,inserts};});});
   o.frame=SECTIONS[s.frame]?s.frame:"38x89";
   o.sheet=s.sheet==="osb18"?"osb18":"ply18";
   return o;
@@ -357,7 +360,7 @@ function computeWall(spec,wi,warn){
   const man=spec.manual[wi];
   let seq=[],W=0,perShelf=0;
   if(man&&man.length){
-    seq=man.map(m=>({type:m.type,width:m.width,topShelf:m.topShelf,skip:m.skip||[]}));
+    seq=man.map(m=>({type:m.type,width:m.width,topShelf:m.topShelf,skip:m.skip||[],inserts:m.inserts||{}}));
     seq.forEach(s=>{if(s.width>sec.maxSpan)warn.push({t:`A ${cm(s.width)} bay on ${wall.name} is wider than the ${cm(sec.maxSpan)} limit for ${sec.label} rails. Narrow it, split it, or switch to 47 × 100 timber.`,bad:true,dedupe:`span-${wi}-${s.width}`});});
     const st=seq.find(s=>s.type==="storage");W=st?st.width:0;perShelf=pb(W);
   }else{
@@ -403,7 +406,7 @@ function computeWall(spec,wi,warn){
   const wb=spec.workbench, thick=kind=>(kind==="bench"?2*PLY:PLY)+railH;
   const bays=[];let x=offset+t;
   seq.forEach((s,idx)=>{
-    const Wb=s.width,tall=s.type==="tall",isBench=s.type==="bench",skip=s.skip||[];let items,ties=[],slots=[];
+    const Wb=s.width,tall=s.type==="tall",isBench=s.type==="bench",skip=s.skip||[],ins=s.inserts||{};let items,ties=[],slots=[];
     const lvi=lv.map((h,li)=>({h,li}));
     if(tall){items=s.topShelf?[{h:spec.unitHeight,kind:"shelf"}]:[];ties=[300,Math.round(spec.unitHeight*0.55)];}
     else if(isBench){
@@ -423,13 +426,23 @@ function computeWall(spec,wi,warn){
       it.clear=nx?(nx.h-thick(nx.kind)-it.h):(spec.ceiling-it.h);
       it.open=it.kind==="shelf"&&!!nx&&it.clear>2*spec.box.h+50;
       it.boxes=(it.kind==="shelf"&&!it.open&&it.clear>=spec.box.h+20&&spec.depth>=boxD+10)?ps:0;
+      const want=it.li!==undefined&&it.li>=0&&nx?ins[it.li]:null;
+      if(want&&!tall){
+        const WEL=480,PITCH=200;let type=want,wellyPairs=0,tierHs=[];
+        if((type==="wellies"||type==="both")&&it.clear<450){warn.push({t:`${wall.name}, bay ${idx+1}: the space above ${cm(it.h)} is only ${cm(it.clear)} high, too low for wellies (about 45 cm needed).`,bad:true});type=type==="both"?"shoes":null;}
+        if(type==="both"&&it.clear<WEL+240)type="wellies";
+        if(type==="wellies"||type==="both")wellyPairs=Math.max(0,Math.floor((Wb-40)/220));
+        if(type==="shoes"||type==="both"){const base0=it.h+(type==="both"?WEL:0),room=it.h+it.clear-base0;for(let z=base0+PITCH;z<=base0+room-190;z+=PITCH)tierHs.push(z);
+          if(!tierHs.length){if(type==="shoes"){warn.push({t:`${wall.name}, bay ${idx+1}: the space above ${cm(it.h)} is too low for a shoe rack tier.`,bad:true});type=null;}else type="wellies";}}
+        if(type){it.insert={type,wellyPairs,tierHs,shoePairs:tierHs.length*Math.max(0,Math.floor(Wb/240))};it.boxes=0;}
+      }
     });
     if(!tall){
       const pts=[0,...items.map(it=>it.h),spec.unitHeight];
       for(let j=1;j<pts.length;j++){const g=pts[j]-pts[j-1];if(g>1200)ties.push(Math.round(pts[j-1]+g/2));}
       if(!items.length&&!ties.length)ties=[300,Math.round(spec.unitHeight*0.55)];
     }
-    bays.push({i:idx,x0:x,W:Wb,bench:isBench,tall,ties,items,slots,skip,perShelf:ps,topShelf:tall?!!s.topShelf:true});
+    bays.push({i:idx,x0:x,W:Wb,bench:isBench,tall,ties,items,slots,skip,inserts:ins,perShelf:ps,topShelf:tall?!!s.topShelf:true});
     x+=Wb+t;
   });
   return {...base,bays,n:bays.length,W,used,spare,offset,perShelf,manual:!!(man&&man.length)};
@@ -442,7 +455,7 @@ function computeAll(specIn){
   const idx=spec.layout==="L"?[0,1]:[0];
   const walls=idx.map(i=>computeWall(spec,i,warn));
   const timber=[],panels=[],peg=[];
-  const fx={s80:0,s40:0,s25:0,wall:0,packers:0,glue:0,leds:0};
+  const fx={s80:0,s40:0,s25:0,wall:0,packers:0,glue:0,leds:0,bootTrays:0};
   const crossLen=spec.depth-2*b;
   walls.forEach(w=>{
     if(!w.n)return;
@@ -466,6 +479,10 @@ function computeAll(specIn){
         else{panels.push({name:bay.tall?"Tall bay top board":"Shelf board",w:W,h:spec.depth,qty:1});fx.s40+=edge;}
       });
       if(bay.ties.length){timber.push({name:"Back tie rail",len:railLen,qty:bay.ties.length,wall:tag});fx.s80+=bay.ties.length*6;}
+      bay.items.forEach(it=>{const I=it.insert;if(!I)return;
+        if(I.tierHs.length){timber.push({name:"Shoe rack slat",len:W,qty:I.tierHs.length*2,wall:tag});timber.push({name:"Shoe rack cleat",len:crossLen,qty:I.tierHs.length*2,wall:tag});fx.s80+=I.tierHs.length*8;}
+        if(I.wellyPairs){timber.push({name:"Welly lip rail",len:W,qty:1,wall:tag});fx.s80+=6;fx.bootTrays+=Math.max(1,Math.round(W/800));}
+      });
       if(bay.tall)return;
       const shelves=bay.items.filter(it=>it.kind==="shelf");
       if(bay.bench){
@@ -563,7 +580,15 @@ function elevationSVG(R,w,opts={}){
     const x0=bay.x0;
     o+=`<g data-g="${bay.i}">`;
     bay.ties.forEach(th=>{o+=`<rect x="${X(x0)}" y="${Y(th)}" width="${bay.W*s}" height="${railH*s}" class="band" opacity=".45"/>`;});
-    bay.items.forEach(it=>{if(!it.open)return;const top=it.h+it.clear;
+    bay.items.forEach(it=>{const I=it.insert;if(!I)return;
+      if(I.wellyPairs){const bw=90,gap=40,pw=2*bw+gap,n=Math.min(I.wellyPairs,Math.floor((bay.W-40)/220)),tot=n*pw+(n-1)*(220-pw),px=x0+(bay.W-tot)/2;
+        for(let q=0;q<n;q++){const bx=px+q*220;[0,bw+gap].forEach(dx=>{o+=`<path d="M${X(bx+dx)} ${Y(it.h+400)} h${bw*s} v${400*s} h-${bw*s} z" class="boot"/>`;});}
+        o+=`<rect x="${X(x0)}" y="${Y(it.h+89)}" width="${bay.W*s}" height="${89*s}" class="band" opacity=".75"/>`;
+        if(bay.W*s>90)o+=`<text x="${X(x0+bay.W/2)}" y="${Y(it.h+440)}" text-anchor="middle" class="lbl strong">Wellies · about ${I.wellyPairs} pairs</text>`;}
+      I.tierHs.forEach(z=>{o+=`<rect x="${X(x0)}" y="${Y(z+40)}" width="${bay.W*s}" height="${Math.max(2,38*s)}" class="band" opacity=".55"/><rect x="${X(x0)}" y="${Y(z)}" width="${bay.W*s}" height="${Math.max(2,38*s)}" class="band"/>`;
+        const per=Math.max(0,Math.floor(bay.W/240));for(let q=0;q<per;q++){const sx=x0+(bay.W-per*240)/2+q*240+30;o+=`<rect x="${X(sx)}" y="${Y(z+130)}" width="${80*s}" height="${90*s}" rx="3" class="shoe"/><rect x="${X(sx+95)}" y="${Y(z+130)}" width="${80*s}" height="${90*s}" rx="3" class="shoe"/>`;}});
+    });
+    bay.items.forEach(it=>{if(!it.open||it.insert)return;const top=it.h+it.clear;
       o+=`<rect x="${X(x0)+4}" y="${Y(top)+4}" width="${bay.W*s-8}" height="${it.clear*s-8}" rx="3" class="openbox"/>`;
       if(bay.W*s>70)o+=`<text x="${X(x0+bay.W/2)}" y="${Y(it.h+it.clear*0.78)}" text-anchor="middle" class="lbl strong">Open space</text><text x="${X(x0+bay.W/2)}" y="${Y(it.h+it.clear*0.78)+16}" text-anchor="middle" class="lbl">${cm(it.clear)} high</text>`;});
     if(bay.tall){
@@ -587,7 +612,7 @@ function elevationSVG(R,w,opts={}){
     });
     bay.items.forEach(it=>{o+=`<rect x="${X(x0-t)}" y="${Y(it.h)}" width="${(bay.W+2*t)*s}" height="${thick(it.kind)*s}" class="${it.kind==="bench"?"benchtop":"band"}"/>`;});
     const cnt=bay.items.reduce((a,it)=>a+it.boxes,0);
-    o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+20}" text-anchor="middle" class="lbl strong">${bay.tall?"Tall":bay.bench?"Workbench":(cnt?cnt+" box"+(cnt===1?"":"es"):"")+(bay.items.some(i=>i.open)?(cnt?" + open":"Open space"):"")||"0 boxes"}</text>`;
+    o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+20}" text-anchor="middle" class="lbl strong">${bay.tall?"Tall":bay.bench?"Workbench":(cnt?cnt+" box"+(cnt===1?"":"es"):"")+(bay.items.some(i=>i.insert)?(cnt?" + ":"")+[...new Set(bay.items.filter(i=>i.insert).map(i=>i.insert.type==="shoes"?"shoes":i.insert.type==="wellies"?"wellies":"wellies & shoes"))].join(", "):bay.items.some(i=>i.open)?(cnt?" + open":"Open space"):"")||"0 boxes"}</text>`;
     o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+37}" text-anchor="middle" class="lbl">${cm(bay.W)} clear</text>`;
     if(inter){
       const on=sel===bay.i;
@@ -674,6 +699,7 @@ function shopRows(R){
   if(fx.wall)rows.push(["Wall fixings suited to your wall (e.g. frame fixings for masonry)",fx.wall+2,"Tying frames to the wall"]);
   if(fx.packers)rows.push(["Plastic packers or DPC strip",fx.packers,"Under each upright"]);
   if(fx.glue)rows.push(["Wood glue (PVA)",1,"Laminating the bench top"]);
+  if(fx.bootTrays)rows.push(["Boot trays, about 80 cm long (optional)",fx.bootTrays,"Under the wellies"]);
   if(fx.leds)rows.push(["Linkable LED battens, about 1.2 m, plug-in (optional)",fx.leds,"Under the shelf above the bench"]);
   return rows;
 }
@@ -697,6 +723,7 @@ function stepsFor(R){
     `Drop the boards in between the uprights and screw them to the rails.`
   ];
   if(s.manual.some(m=>m&&m.some(b=>b.skip&&b.skip.length)))out.push(`Where you removed shelves, leave out those rails, boards and battens (the cut list already does). Bays with a gap over 1.2 m get a back tie rail in the gap to keep the frame rigid.`);
+  if(s.manual.some(m=>m&&m.some(b=>b.inserts&&Object.keys(b.inserts).length)))out.push(`Shoe racks: screw a pair of cleats to the insides of the uprights for each tier, the front one about 40 mm lower than the back so shoes tilt towards you, then lay a front and back slat across. Wellies: fix the lip rail on edge along the front of the shelf so boots can't slide off, and stand a boot tray behind it.`);
   if(s.tallBays.length)out.push(`Tall bays have no shelves except the top board. Fit the back tie rails at 30 cm and about halfway up so the frame stays rigid, then add a strap or hooks for the ladder.`);
   if(s.workbench.enabled)out.push(`Glue and screw the two bench top layers, fit the pegboard, then fix the LED battens under the shelf above. Use plug-in lights, and get an electrician for any hardwired work.`);
   return out;
@@ -729,7 +756,7 @@ function render(){
 /* bay editing */
 const fitW=(k,f)=>k*f+(k+1)*GAP;
 function snapWidth(W,f){W=Math.max(150,Math.min(3000,W));for(let k=1;k<=6;k++){const fw=fitW(k,f);if(Math.abs(W-fw)<50)return fw;}return Math.round(W/10)*10;}
-function ensureManual(wi){if(!spec.manual[wi])spec.manual[wi]=R.walls[wi].bays.map(b=>({type:b.tall?"tall":b.bench?"bench":"storage",width:b.W,topShelf:b.topShelf,skip:(b.skip||[]).slice()}));return spec.manual[wi];}
+function ensureManual(wi){if(!spec.manual[wi])spec.manual[wi]=R.walls[wi].bays.map(b=>({type:b.tall?"tall":b.bench?"bench":"storage",width:b.W,topShelf:b.topShelf,skip:(b.skip||[]).slice(),inserts:Object.assign({},b.inserts||{})}));return spec.manual[wi];}
 function editBays(wi,fn){const arr=ensureManual(wi);fn(arr);spec=sanitize(spec);render();}
 function renderBaybar(){
   const bb=$("baybar");
@@ -753,6 +780,7 @@ function renderBaybar(){
         <button class="vbtn" data-act="remove" ${n<=1?"disabled":""}>Remove</button>
         <button class="vbtn" data-act="desel">Done</button>
       </div>
+      ${type==="tall"?"":b.items.filter((it,j)=>it.kind==="shelf"&&it.li>=0&&b.items[j+1]&&it.clear>=250).map(it=>`<div class="row"><span class="note">Space above ${Math.round(it.h/10)} cm (${cm(it.clear)} high)${it.insert?`, fits about ${[it.insert.wellyPairs?it.insert.wellyPairs+" pairs of wellies":"",it.insert.tierHs.length?it.insert.shoePairs+" pairs of shoes on "+it.insert.tierHs.length+" tiers":""].filter(Boolean).join(" and ")}`:""}:</span><select data-ins="${it.li}" aria-label="Insert for the space above ${Math.round(it.h/10)} cm"><option value="">Boxes or open</option><option value="shoes" ${b.inserts[it.li]==="shoes"?"selected":""}>Shoe rack</option>${it.clear>=450?`<option value="wellies" ${b.inserts[it.li]==="wellies"?"selected":""}>Wellies</option>`:""}${it.clear>=720?`<option value="both" ${b.inserts[it.li]==="both"?"selected":""}>Wellies with shoe rack above</option>`:""}</select></div>`).join("")}
       ${b.slots&&b.slots.filter(x=>x.li>=0).length?`<div class="row"><span class="note">Shelves (click to remove or put back):</span>${b.slots.filter(x=>x.li>=0).map(x=>`<button class="vbtn shelfbtn" data-shelf="${x.li}" aria-pressed="${!b.skip.includes(x.li)}">${Math.round(x.h/10)} cm</button>`).join("")}</div>`:""}
       </div>`;
   }
@@ -770,9 +798,10 @@ function renderBaybar(){
     if(act==="remove"){editBays(wi,a=>{a.splice(i,1);});sel=null;render();return;}
   });
   bb.querySelectorAll("[data-shelf]").forEach(el=>el.onclick=()=>{const li=+el.dataset.shelf;editBays(wi,a=>{const x=a[sel.i];x.skip=x.skip||[];x.skip=x.skip.includes(li)?x.skip.filter(v=>v!==li):[...x.skip,li];});});
+  bb.querySelectorAll("[data-ins]").forEach(el=>el.onchange=()=>{const li=el.dataset.ins,v=el.value;editBays(wi,a=>{const x=a[sel.i];x.inserts=Object.assign({},x.inserts||{});if(v)x.inserts[li]=v;else delete x.inserts[li];});});
   const bw=$("bay-w"),bt=$("bay-t"),btop=$("bay-top");
   if(bw)bw.onchange=()=>{const v=parseFloat(bw.value);if(isFinite(v))editBays(wi,a=>{a[sel.i].width=Math.round(v*10);});};
-  if(bt)bt.onchange=()=>editBays(wi,a=>{const x=a[sel.i];x.type=bt.value;if(bt.value==="tall"){x.skip=[];if(x.width>800)x.width=400;}});
+  if(bt)bt.onchange=()=>editBays(wi,a=>{const x=a[sel.i];x.type=bt.value;if(bt.value==="tall"){x.skip=[];x.inserts={};if(x.width>800)x.width=400;}});
   if(btop)btop.onchange=()=>editBays(wi,a=>{a[sel.i].topShelf=btop.checked;});
 }
 function attachDrag(){
@@ -870,7 +899,7 @@ let sample=null,busy=false,ctl=null;const turns=[];
 function addMsg(role,text){const d=document.createElement("div");d.className="msg "+role;d.textContent=text;$("chatlog").appendChild(d);$("chatlog").scrollTop=$("chatlog").scrollHeight;return d;}
 addMsg("ai","Tell me about your space: wall lengths, ceiling height, whether it's a corner, and anything special like a taller bottom section, a workbench, or a tall bay for a ladder. I'll redraw the plan as we go. You can also fine-tune every number in Adjust.");
 function summary(){
-  return `Box front (the side facing out) is ${R.walls[0]?R.walls[0].f:0} mm. Shelf levels by index: ${(R.walls.find(w=>w.bays.length)||{bays:[]}).bays.flatMap(b=>b.slots||[]).filter((v,i,a)=>v.li>=0&&a.findIndex(z=>z.li===v.li)===i).sort((a,b)=>a.li-b.li).map(v=>v.li+"="+v.h+"mm").join(", ")}. `+R.walls.map(w=>`${w.name} (${w.manual?"arranged by hand":"automatic"}, needs ${w.used+w.start} of ${w.length} mm): ${w.n} bays left to right (${w.bays.map(b=>(b.tall?"tall ":b.bench?"bench ":"")+b.W+" mm"+(b.skip&&b.skip.length?" skip ["+b.skip.join(",")+"]":"")).join(", ")}), shelf heights ${[...new Set(w.bays.flatMap(b=>b.items.map(i=>i.h)))].sort((a,b)=>a-b).join("/")} mm`).join("; ")+`. Total box spaces: ${R.totes}. Notes: ${R.warnings.map(w=>w.t).join(" ")||"none"}`;
+  return `Box front (the side facing out) is ${R.walls[0]?R.walls[0].f:0} mm. Shelf levels by index: ${(R.walls.find(w=>w.bays.length)||{bays:[]}).bays.flatMap(b=>b.slots||[]).filter((v,i,a)=>v.li>=0&&a.findIndex(z=>z.li===v.li)===i).sort((a,b)=>a.li-b.li).map(v=>v.li+"="+v.h+"mm").join(", ")}. `+R.walls.map(w=>`${w.name} (${w.manual?"arranged by hand":"automatic"}, needs ${w.used+w.start} of ${w.length} mm): ${w.n} bays left to right (${w.bays.map(b=>(b.tall?"tall ":b.bench?"bench ":"")+b.W+" mm"+(b.skip&&b.skip.length?" skip ["+b.skip.join(",")+"]":"")+(b.inserts&&Object.keys(b.inserts).length?" inserts "+JSON.stringify(b.inserts):"")).join(", ")}), shelf heights ${[...new Set(w.bays.flatMap(b=>b.items.map(i=>i.h)))].sort((a,b)=>a-b).join("/")} mm`).join("; ")+`. Total box spaces: ${R.totes}. Notes: ${R.warnings.map(w=>w.t).join(" ")||"none"}`;
 }
 function buildPrompt(msg){
   const railStack=PLY+SECTIONS[spec.frame].h;
@@ -891,7 +920,7 @@ SPEC FIELDS (all lengths in millimetres):
 - levels: ascending shelf top heights above the floor, e.g. [120, 1300, 1800]. The lowest possible is about ${railStack+13}. Each shelf's structure is ${railStack} mm thick below its top surface.
 - workbench: {enabled, wall (0 or 1), at ("start" = left end, "middle", "end" = right end), height (bench surface), upperShelf (a shelf with lights above the bench)}.
 - tallBays: array of 0 to 4 narrow full-height bays with no shelves, for ladders, brooms, long tools and other tall items: [{wall (0 or 1), at ("start" = left end, "middle", "end" = right end), width (clear width between uprights; default 400), topShelf (true = one board across the top of the uprights)}]. Use this whenever the user asks for a tall partition, ladder space, or somewhere to stand long items upright. If they don't give a width, use 400 and say so.
-- manual: [wall0, wall1]. Each is null (automatic arrangement) or an ordered left-to-right array of bays [{type: "storage"|"bench"|"tall", width (clear width between uprights), topShelf (tall bays only)}]. When set, it overrides fillWall, bayClear, tallBays and the workbench position for that wall. Use it when the user wants to move, swap, reorder, resize, add or remove specific bays: copy the current bays listed below and change only what was asked. To fit N boxes side by side, width = N x box front + (N+1) x 30. Each bay may also have skip: an array of shelf-level indices (0 = lowest, from the shelf heights listed below) to leave out of that bay, e.g. to make a taller open space for bulky items; "remove the bottom two shelves above the floor shelf" means skip [1, 2]. Set an entry back to null if they ask for the automatic layout.
+- manual: [wall0, wall1]. Each is null (automatic arrangement) or an ordered left-to-right array of bays [{type: "storage"|"bench"|"tall", width (clear width between uprights), topShelf (tall bays only)}]. When set, it overrides fillWall, bayClear, tallBays and the workbench position for that wall. Use it when the user wants to move, swap, reorder, resize, add or remove specific bays: copy the current bays listed below and change only what was asked. To fit N boxes side by side, width = N x box front + (N+1) x 30. Each bay may also have skip: an array of shelf-level indices (0 = lowest, from the shelf heights listed below) to leave out of that bay, e.g. to make a taller open space for bulky items; "remove the bottom two shelves above the floor shelf" means skip [1, 2]. Each bay may also have inserts: an object keyed by the shelf-level index whose space ABOVE gets the insert, with value "shoes" (sloped shoe rack tiers), "wellies" (boots standing on the shelf with a front lip; needs about 45 cm) or "both" (wellies at the bottom, shoe rack above). Inserts go in the gap above a shelf that still has a shelf above it, usually an open space made by skipping shelves. Set an entry back to null if they ask for the automatic layout.
 - frame: "38x89" (CLS) or "47x100" (C24, allows wider bays).
 - sheet: "ply18" or "osb18".
 
