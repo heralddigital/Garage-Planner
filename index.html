@@ -911,7 +911,7 @@ function draw3d(R){
   // Scale: fit horizontally
   // Screen width of scene: (W0 + D) * cos30 (for straight)
   // For L: W0*cos30 + W1*cos30 (right wall adds width in the Z direction)
-  const cos30=Math.cos(Math.PI/6), sin30=0.5;
+  const cos30=Math.cos(Math.PI/6), sin30=0.22; // flattened for lower viewpoint
   const sceneSpanX=(W0+(isL?0:0))*cos30; // X contributes right
   const sceneSpanZ=D*cos30;              // Z contributes left (back depth)
   const totalW=sceneSpanX+sceneSpanZ+(isL?W1*cos30:0);
