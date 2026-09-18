@@ -125,6 +125,16 @@ svg.inter{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .baybar .sel{border:1px solid var(--line);border-left:4px solid var(--lid);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .baybar input[type=number]{width:84px;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text)}
 .baybar select{padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text)}
+.stock-summary{margin:12px 0 4px;display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center}
+.stock-total{display:flex;align-items:baseline;gap:3px;flex-wrap:wrap}
+.st-n{font-family:var(--font-display);font-size:26px;font-weight:600;line-height:1}
+.st-lbl,.st-sep{font-size:14px;color:var(--muted)}
+.st-m{font-family:var(--font-display);font-size:17px;font-weight:600}
+.stock-breakdown{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
+.st-chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:14px}
+.stockopts{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:8px 0 2px;border-top:1px solid var(--line);margin-top:6px}
+.stk-lbl{font-size:14px;color:var(--muted)}
+.stk{display:flex;align-items:center;gap:5px;font-size:15px;cursor:pointer}
 .manual{background:var(--note-bg);border-left:4px solid var(--lid);padding:8px 12px;font-size:15px}
 .stat.bad b{color:var(--danger)}
 .boot{fill:var(--tote);opacity:.8}
@@ -286,7 +296,7 @@ const SECTIONS={
   "47x100":{b:47,h:100,label:"47 × 100 mm C24",maxSpan:2200}
 };
 const SHEETS={ply18:"18 mm plywood",osb18:"18 mm OSB3"};
-const STOCK=[2400,3000,3600], SHEET={w:2440,h:1220}, KERF=3, GAP=30, PLY=18;
+const ALL_STOCK=[2400,3000,3600], SHEET={w:2440,h:1220}, KERF=3, GAP=30, PLY=18;
 const DEFAULT_SPEC={
   layout:"straight",
   walls:[{name:"Wall",length:5300},{name:"Right wall",length:2100}],
@@ -297,6 +307,7 @@ const DEFAULT_SPEC={
   workbench:{enabled:true,wall:0,at:"end",height:920,upperShelf:true},
   tallBays:[],
   manual:[null,null],
+  stockOptions:{2400:true,3000:true,3600:true},
   frame:"38x89", sheet:"ply18"
 };
 function num(v,a,b,d){v=Number(v);if(!isFinite(v))return d;return Math.min(b,Math.max(a,v));}
@@ -333,6 +344,9 @@ function sanitize(s){
       const skip=[...new Set((Array.isArray(x.skip)?x.skip:[]).map(Number).filter(v=>Number.isInteger(v)&&v>=0&&v<30))].sort((a,b)=>a-b);
       const inserts={};if(x.inserts&&typeof x.inserts==="object")Object.keys(x.inserts).forEach(k=>{const li=Number(k);if(Number.isInteger(li)&&li>=0&&li<30&&["shoes","wellies","both"].includes(x.inserts[k]))inserts[li]=x.inserts[k];});
       return{type,width:Math.round(num(x.width,150,3000,type==="tall"?400:1000)),topShelf:x.topShelf!==false,skip,inserts};});});
+  const so=s.stockOptions&&typeof s.stockOptions==="object"?s.stockOptions:{};
+  o.stockOptions=Object.fromEntries(ALL_STOCK.map(k=>[k,so[k]!==false&&so[k]!==0]));
+  if(!ALL_STOCK.some(k=>o.stockOptions[k]))o.stockOptions[2400]=true;
   o.frame=SECTIONS[s.frame]?s.frame:"38x89";
   o.sheet=s.sheet==="osb18"?"osb18":"ply18";
   return o;
@@ -493,18 +507,19 @@ function computeAll(specIn){
         if(up)fx.leds+=Math.ceil(W/1250);
       }else if(shelves.length>=2){
         const dx=W+t, dy=shelves[shelves.length-1].h-shelves[0].h, len=Math.hypot(dx,dy);
-        if(len<=STOCK[STOCK.length-1]){timber.push({name:"Back brace",len:Math.round(len),qty:1,wall:tag});}
+        if(len<=ALL_STOCK[ALL_STOCK.length-1]){timber.push({name:"Back brace",len:Math.round(len),qty:1,wall:tag});}
         else timber.push({name:"Back brace",len:Math.round(Math.hypot(dx,dy/2)),qty:2,wall:tag});
         fx.s80+=shelves.length*2;
       }
     });
   });
   const pieces=[];timber.forEach(p=>{for(let i=0;i<p.qty;i++)pieces.push({len:p.len,name:p.name});});
-  const tplan=packTimber(pieces);
+  const activeStock=ALL_STOCK.filter(k=>spec.stockOptions[k]).sort((a,b)=>a-b);
+  const tplan=packTimber(pieces,activeStock);
   const sp=[];panels.forEach(p=>{for(let i=0;i<p.qty;i++)sp.push({w:p.w,h:p.h,name:p.name});});
   const pp=[];peg.forEach(p=>{for(let i=0;i<p.qty;i++)pp.push({w:p.w,h:p.h,name:p.name});});
   const splan=packSheets(sp), pplan=packSheets(pp);
-  if(tplan.tooLong.length)warn.push({t:`Some pieces are longer than ${STOCK[STOCK.length-1]/1000} m stock. Lower the uprights or split the braces.`,bad:true});
+  if(tplan.tooLong.length)warn.push({t:`Some pieces are longer than the longest active stock length. Tick 3.6 m, or lower the uprights and split the braces.`,bad:true});
   if(splan.oversize.length||pplan.oversize.length)warn.push({t:"Some boards are bigger than a 2440 × 1220 sheet and need joining over a batten.",bad:true});
   const totes=walls.reduce((a,w)=>a+w.bays.reduce((x,b)=>x+b.items.reduce((y,it)=>y+it.boxes,0),0),0);
   walls.forEach(w=>w.bays.forEach(b=>b.items.forEach(it=>{
@@ -518,18 +533,19 @@ function computeAll(specIn){
   if(topBox>1900)warnings.push({t:`The top boxes sit at about ${(topBox/1000).toFixed(2)} m, so keep a step stool handy and store light things up there.`});
   return {spec,sec,walls,timber,panels,peg,fx,tplan,splan,pplan,totes,warnings};
 }
-function packTimber(pieces){
-  const maxS=STOCK[STOCK.length-1];
+function packTimber(pieces,stockArr){
+  if(!stockArr||!stockArr.length)stockArr=ALL_STOCK;
+  const maxS=stockArr[stockArr.length-1];
   const tooLong=pieces.filter(p=>p.len>maxS);
   const ok=pieces.filter(p=>p.len<=maxS).sort((a,b)=>b.len-a.len);
   let best=null;
-  for(const S of STOCK){
+  for(const S of stockArr){
     const bins=[];
     for(const p of ok){
       const need=p.len+KERF;let bi=-1,br=Infinity;
       bins.forEach((bn,i)=>{const r=bn.stock-bn.used-need;if(r>=-KERF&&r<br){br=r;bi=i;}});
       if(bi>=0){bins[bi].used+=need;bins[bi].cuts.push(p);}
-      else{const st=p.len<=S?S:STOCK.find(x=>x>=p.len);bins.push({stock:st,used:need,cuts:[p]});}
+      else{const st=p.len<=S?S:stockArr.find(x=>x>=p.len);bins.push({stock:st,used:need,cuts:[p]});}
     }
     const total=bins.reduce((a,x)=>a+x.stock,0);
     if(!best||total<best.total||(total===best.total&&bins.length<best.bins.length))best={total,bins};
@@ -689,7 +705,8 @@ function groupSheets(sheets){
 function shopRows(R){
   const rows=[],sec=R.sec,fx=R.fx;
   const by={};R.tplan.bins.forEach(b=>by[b.stock]=(by[b.stock]||0)+1);
-  Object.keys(by).sort((a,b)=>a-b).forEach(k=>rows.push([`${sec.label}, ${(k/1000).toFixed(1)} m lengths`,by[k],"Frame, rails, cross-members, braces"]));
+  const totalLengths=R.tplan.bins.length;
+  Object.keys(by).sort((a,b)=>a-b).forEach(k=>rows.push([`${sec.label}, ${(k/1000).toFixed(1)} m lengths`,by[k],`Frame, rails, cross-members, braces — ${totalLengths} lengths total`]));
   if(R.splan.sheets.length)rows.push([`${SHEETS[R.spec.sheet]}, 2440 × 1220 mm`,R.splan.sheets.length,"Shelf boards and bench top"]);
   if(R.pplan.sheets.length)rows.push(["Pegboard or 9–12 mm ply, 2440 × 1220 mm (check size)",R.pplan.sheets.length,"Back of the bench"]);
   const up=(n,st)=>Math.ceil(n*1.1/st)*st;
@@ -748,7 +765,17 @@ function render(){
   $("warns").innerHTML=R.warnings.map(w=>`<li class="${w.bad?"bad":""}">${esc(w.t)}</li>`).join("");
   $("shop").innerHTML=`<table class="tbl"><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th>For</th></tr></thead><tbody>${shopRows(R).map(r=>`<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td>${esc(r[2])}</td></tr>`).join("")}</tbody></table>`;
   $("cuts").innerHTML=`<table class="tbl"><thead><tr><th>Part</th><th>Size</th><th style="text-align:right">Qty</th><th>Material</th></tr></thead><tbody>${cutRows(R).map(r=>`<tr><td>${esc(r.name)}</td><td class="n" style="text-align:left">${esc(r.size)}</td><td class="n">${r.qty}</td><td>${esc(r.mat)}</td></tr>`).join("")}</tbody></table>`;
-  $("bars").innerHTML=groupBins(R.tplan.bins).map(g=>`<div class="barrow"><span>${(g.bin.stock/1000).toFixed(1)} m × ${g.n}</span><div class="bar" title="Offcut ${Math.max(0,g.bin.stock-g.bin.used+KERF)} mm">${g.bin.cuts.map(c=>`<div class="cut" style="width:${c.len/g.bin.stock*100}%" title="${esc(c.name)} ${c.len} mm">${c.len/g.bin.stock>.12?c.len:""}</div>`).join("")}</div></div>`).join("")+`<p class="fine">About ${Math.round(R.tplan.waste*100)}% offcut waste, allowing ${KERF} mm per saw cut.</p>`;
+  $("bars").innerHTML=(()=>{
+  const grps=groupBins(R.tplan.bins);
+  const byLen={};grps.forEach(g=>{const k=g.bin.stock;byLen[k]=(byLen[k]||0)+g.n;});
+  const total=grps.reduce((a,g)=>a+g.n,0);
+  const totalM=(grps.reduce((a,g)=>a+g.n*g.bin.stock,0)/1000).toFixed(1);
+  let out=grps.map(g=>`<div class="barrow"><span>${(g.bin.stock/1000).toFixed(1)} m × ${g.n}</span><div class="bar" title="Offcut ${Math.max(0,g.bin.stock-g.bin.used+KERF)} mm">${g.bin.cuts.map(c=>`<div class="cut" style="width:${c.len/g.bin.stock*100}%" title="${esc(c.name)} ${c.len} mm">${c.len/g.bin.stock>.12?c.len:""}</div>`).join("")}</div></div>`).join("");
+  out+=`<div class="stock-summary"><div class="stock-total"><span class="st-n">${total}</span><span class="st-lbl"> lengths needed</span><span class="st-sep"> — </span><span class="st-m">${totalM} m total</span></div><div class="stock-breakdown">${Object.keys(byLen).sort((a,b)=>+a-+b).map(k=>`<span class="st-chip"><b>${byLen[k]}</b> × ${(+k/1000).toFixed(1)} m</span>`).join("")}</div></div>`;
+  out+=`<div class="stockopts"><span class="stk-lbl">Stock lengths my merchant sells:</span>${ALL_STOCK.map(k=>`<label class="stk"><input type="checkbox" data-stk="${k}" ${spec.stockOptions[k]?"checked":""}>  ${(k/1000).toFixed(1)} m</label>`).join("")}</div>`;
+  out+=`<p class="fine">About ${Math.round(R.tplan.waste*100)}% offcut waste, allowing ${KERF} mm per saw cut.</p>`;
+  return out;
+})();
   $("sheets").innerHTML=[...groupSheets(R.splan.sheets).map(g=>[g,SHEETS[spec.sheet]]),...groupSheets(R.pplan.sheets).map(g=>[g,"Pegboard"])].map(([g,l])=>`<figure>${sheetSVG(g.sheet)}<figcaption>${esc(l)} × ${g.n}</figcaption></figure>`).join("")||`<p class="fine">No sheets needed.</p>`;
   $("steps").innerHTML=stepsFor(R).map(s=>`<li>${esc(s)}</li>`).join("");
 }
@@ -846,6 +873,15 @@ function attachDrag(){
   svg.addEventListener("pointercancel",()=>{d=null;render();});
 }
 
+document.addEventListener("change",ev=>{
+  const stk=ev.target.dataset&&ev.target.dataset.stk;
+  if(!stk)return;
+  const k=+stk;
+  spec.stockOptions=Object.assign({},spec.stockOptions);
+  spec.stockOptions[k]=!!ev.target.checked;
+  if(!ALL_STOCK.some(x=>spec.stockOptions[x]))spec.stockOptions[k]=true;
+  spec=sanitize(spec);render();
+});
 /* form sync */
 const F=id=>$("f-"+id), toCm=mm=>Math.round(mm)/10, toMm=v=>Math.round(parseFloat(v)*10);
 function syncForm(){
