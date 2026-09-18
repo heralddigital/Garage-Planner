@@ -770,7 +770,7 @@ function render(){
   $("stats").innerHTML=[[R.totes,"box spaces",""],[bays,"bays",""],[m2(need),"of wall needed",need>avail?"bad":""],[m2(avail),"available",""],[cm(spec.depth),"deep",""]].map(([b,l,c])=>`<div class="stat ${c}"><b>${b}</b><span>${l}</span></div>`).join("");
   if(sel&&(sel.wi!==view||!R.walls[sel.wi]||!R.walls[sel.wi].bays[sel.i]))sel=null;
   const is3d=view===views.length-1, isPlan=view===R.walls.length;
-  $("drawing").innerHTML=is3d?'<div id="c3d" style="width:100%;display:block"></div>':isPlan?planSVG(R):elevationSVG(R,R.walls[view],{interactive:true,sel:sel?sel.i:null});
+  $("drawing").innerHTML=is3d?'<div id="c3d" style="width:100%"></div>':isPlan?planSVG(R):elevationSVG(R,R.walls[view],{interactive:true,sel:sel?sel.i:null});
   renderBaybar(); if(!is3d&&!isPlan)attachDrag(); if(is3d)draw3d(R);
   $("warns").innerHTML=R.warnings.map(w=>`<li class="${w.bad?"bad":""}">${esc(w.t)}</li>`).join("");
   $("shop").innerHTML=`<table class="tbl"><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th>For</th></tr></thead><tbody>${shopRows(R).map(r=>`<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td>${esc(r[2])}</td></tr>`).join("")}</tbody></table>`;
@@ -893,10 +893,10 @@ document.addEventListener("change",ev=>{
   spec=sanitize(spec);render();
 });
 
-/* ---------- 3D view — isometric SVG ---------- */
+/* ---------- 3D view — canvas dimetric ---------- */
 function draw3d(R){
-  const cv=document.getElementById("c3d"); if(!cv)return;
-  const spec=R.spec, sec=R.sec, T=sec.h;
+  const el=document.getElementById("c3d"); if(!el)return;
+  const spec=R.spec, sec=R.sec, TH=sec.h; // TH = timber thickness (89mm)
   const dark=document.documentElement.dataset.theme==="dark"||
     (!document.documentElement.dataset.theme&&matchMedia("(prefers-color-scheme:dark)").matches);
 
@@ -905,240 +905,207 @@ function draw3d(R){
   const W1=(isL&&walls[1])?walls[1].length:0;
   const H=spec.unitHeight, D=spec.depth;
 
-  // ── Isometric projection ──────────────────────────────────────────────────
-  // Standard isometric: X right, Y up, Z depth
-  // Screen coords: sx = (x - z) * cos30, sy = (x + z) * sin30 - y
-  const CW=cv.offsetWidth||820;
+  // Canvas
+  const CW=el.offsetWidth||820, DPR=devicePixelRatio||1;
+  // Dimetric projection: X→right-down at 30°, Z→right-up at 30°, Y→straight up
+  // Scale: fit horizontally
+  // Screen width of scene: (W0 + D) * cos30 (for straight)
+  // For L: W0*cos30 + W1*cos30 (right wall adds width in the Z direction)
+  const cos30=Math.cos(Math.PI/6), sin30=0.5;
+  const sceneSpanX=(W0+(isL?0:0))*cos30; // X contributes right
+  const sceneSpanZ=D*cos30;              // Z contributes left (back depth)
+  const totalW=sceneSpanX+sceneSpanZ+(isL?W1*cos30:0);
+  const sc=CW*0.88/totalW; // mm→px
 
-  // Scale: fit the width of the scene
-  const cos30_=Math.cos(Math.PI/6), sin30_=Math.sin(Math.PI/6);
-  const isoExtent=isL?(W0+W1+D):W0+D;
-  const sc=(CW*0.90)/(isoExtent*cos30_);
-  const W_tot=W0+(isL?W1:0);
-  const padT=CW*0.04, padB=CW*0.04;
-  const oy=Math.round(H*sc+padT);
-  const svgH=Math.round(oy+W_tot*sin30_*sc+padB);
-  cv.style.height=svgH+"px";
-  const SX=(x,z)=>(x-z)*Math.cos(Math.PI/6)*sc;
-  const SY=(x,y,z)=>(x+z)*Math.sin(Math.PI/6)*sc - y*sc;
-  // Origin maps to SVG coords
-  // Compute fitting origin: the rightmost point is P(W0,0,0), leftmost P(0,0,D)
-  // Height on screen = (X_extent + Z_extent) * sin30 * sc + H * sc
-  const isoHtop=H*sc;
-  // X+ goes right-up, Z+ goes left-up
-  // Right edge at P(W0+(isL?0:0),0,0) → ox + W0*cos30*sc
-  // Left edge at P(0,0,D) → ox - D*cos30*sc
-  // Top at P(0,H,0) → oy - H*sc
-  // Centre horizontally
-  const usedW=isoExtent*cos30_*sc;
-  const margin=(CW-usedW)*0.5;
-  const ox=margin+D*cos30_*sc;
-  function P(x,y,z){return[ox+SX(x,z), oy+SY(x,y,z)];}
-  function pt(x,y,z){const[a,b]=P(x,y,z);return`${a.toFixed(1)},${b.toFixed(1)}`;}
+  // Canvas height: H*sc up + (W0+D)*sin30*sc down
+  const topRoom=H*sc+50*sc;
+  const botRoom=(W0+(isL?W1:0))*sin30*sc+D*sin30*sc+(isL?W1*sin30*sc:0);
+  const CH=Math.ceil((topRoom+botRoom)*1.05);
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(CW*DPR); canvas.height=Math.round(CH*DPR);
+  canvas.style.cssText=`width:${CW}px;height:${CH}px;display:block;border-radius:6px`;
+  el.innerHTML=""; el.appendChild(canvas);
+  const g=canvas.getContext("2d"); g.scale(DPR,DPR);
 
-  // ── Colours: three-face lighting model ───────────────────────────────────
-  // Top face: brightest (lit from above)
-  // Left face (facing viewer-left = Z axis): mid brightness
-  // Right face (facing viewer-right = X axis): slightly darker
-  const wood={
-    topL:"#E8C87A", topM:"#D4AF60", topD:"#B8924A",       // top face light/mid/dark
-    frontL:"#D4A855",frontM:"#C09040",frontD:"#A87830",    // front face
-    sideL:"#B08038", sideM:"#9A6C28",sideD:"#7A5018",      // side face (darkest)
-    grain:"#00000010",  // grain line overlay
+  // Project (x,y,z) in mm → screen (px)
+  // Dimetric: X goes right+down, Z goes left+down (into scene), Y goes up
+  // sx = ox + x*cos30*sc - z*cos30*sc
+  // sy = oy - y*sc      + x*sin30*sc + z*sin30*sc
+  const ox=CW*0.06+D*cos30*sc+(isL?W1*cos30*sc:0);
+  const oy=topRoom;
+  const P=(x,y,z)=>[ox+x*cos30*sc-z*cos30*sc, oy-y*sc+x*sin30*sc+z*sin30*sc];
+
+  // ── Colour palette ──────────────────────────────────────────────────────
+  // Wood: three levels per face (top/front/side) mimicking warm side-light
+  const W={
+    // Uprights — natural CLS pine look
+    uT: dark?"#C8A050":"#E2BF72",  // top — brightest
+    uF: dark?"#B08838":"#CFA455",  // front (Z face, faces viewer-left)
+    uS: dark?"#8A6420":"#B08838",  // side (X face, faces viewer-right, in shadow)
+    // Shelf boards
+    sT: dark?"#D4B060":"#EECE80",
+    sF: dark?"#B89040":"#D4A850",
+    sS: dark?"#906818":"#B88C38",
+    // Rails (same timber, slightly different shade to show they're thinner)
+    rT: dark?"#C0A048":"#DEC068",
+    rF: dark?"#A88030":"#C89840",
+    rS: dark?"#806010":"#A87C28",
+    // Bench top
+    bT: dark?"#C8A050":"#DDB862",
+    bF: dark?"#A87838":"#C4984A",
+    bS: dark?"#805818":"#A07830",
+    // Pegboard — pale cream
+    pT: dark?"#D0C8A8":"#EDE5CC",
+    pF: dark?"#B8B098":"#D8D0B8",
+    pS: dark?"#A09880":"#C8C0A0",
+    // Tote bin — dark charcoal
+    tT: dark?"#3A3F47":"#2C3038",
+    tF: dark?"#252B32":"#222730",
+    tS: dark?"#1A1F26":"#1A1F25",
+    // Lid — yellow
+    lT: dark?"#F0C030":"#FFDA40",
+    lF: dark?"#D4A010":"#EFC020",
+    lS: dark?"#B08008":"#C8A010",
+    // Environment
+    floor: dark?"#2C2F36":"#D4D1CA",
+    wall:  dark?"#22252B":"#E4E0D8",
+    wallS: dark?"#1C2026":"#D8D4CC",
+    shadow:"rgba(0,0,0,0.18)",
   };
-  if(dark){
-    wood.topL="#C8A85A"; wood.topM="#B09040"; wood.topD="#927030";
-    wood.frontL="#B08838"; wood.frontM="#9A7028"; wood.frontD="#805018";
-    wood.sideL="#906020"; wood.sideM="#7A5015"; wood.sideD="#60400C";
-  }
-  const shelf ={top:wood.topL,   front:"#D4A040",     side:"#A87830"};
-  const shelfD={top:dark?"#A07020":"#C89038",front:"#A07820",side:"#805018"};
-  const bench ={top:"#C8A050",   front:"#A87030",     side:"#8A5818"};
-  const tote  ={top:"#2A2E34",   front:"#20242A",     side:"#191D22"};
-  const lid   ={top:"#F4C830",   front:"#D4A020",     side:"#B08010"};
-  const peg   ={top:"#D8D2B8",   front:"#C8C0A0",     side:"#B0A880"};
-  const wall_c=dark?"#252830":"#E2DED6";
-  const floor_c=dark?"#282C30":"#D0CCC4";
-  const shadow="rgba(0,0,0,0.18)";
 
-  // ── SVG builder ──────────────────────────────────────────────────────────
-  let svgParts=[];
-  let uid=0;
-  function poly(pts,fill,opacity=1,stroke="none",sw=0){
-    const s=stroke!=="none"?`stroke="${stroke}" stroke-width="${sw}"`:"";
-    const op=opacity<1?`opacity="${opacity.toFixed(2)}"`:"";
-    svgParts.push(`<polygon points="${pts}" fill="${fill}" ${op} ${s}/>`);
+  // ── Drawing primitives ─────────────────────────────────────────────────
+  function face(pts,fill){
+    g.beginPath();
+    g.moveTo(...pts[0]);
+    for(let i=1;i<pts.length;i++) g.lineTo(...pts[i]);
+    g.closePath(); g.fillStyle=fill; g.fill();
   }
-  function rect3d(x,y,z,w,h,d,c){
-    // Draw a 3D box at (x,y,z) with width w (X), height h (Y), depth d (Z)
-    // Back faces first, front last
-    // Bottom: skip (not visible)
-    // Back-Z face: x..x+w, y..y+h, z+d
-    poly([pt(x,y,z+d),pt(x+w,y,z+d),pt(x+w,y+h,z+d),pt(x,y+h,z+d)].join(" "),c.side,0.55);
-    // Back-X face: x, y..y+h, z..z+d
-    poly([pt(x,y,z),pt(x,y,z+d),pt(x,y+h,z+d),pt(x,y+h,z)].join(" "),c.side,0.75);
-    // Right face (X+w): x+w, y..y+h, z..z+d
-    poly([pt(x+w,y,z),pt(x+w,y,z+d),pt(x+w,y+h,z+d),pt(x+w,y+h,z)].join(" "),c.front,0.92);
+  // Box: (x,y,z) origin, w=X extent, h=Y extent, d=Z extent
+  // Draws top + front (Z=z face) + right (X=x+w face) in painter order
+  function box(x,y,z,w,h,d,top,front,right,alpha=1){
+    g.globalAlpha=alpha;
+    // Draw order: back Z face → right X face → top → front Z face (front last = on top)
+    // Back face (Z=z+d, hidden/shadow)  
+    if(w>0&&h>0&&d>0) face([P(x,y,z+d),P(x+w,y,z+d),P(x+w,y+h,z+d),P(x,y+h,z+d)],right);
+    // Right face (X=x+w side)
+    if(d>0&&h>0) face([P(x+w,y,z),P(x+w,y,z+d),P(x+w,y+h,z+d),P(x+w,y+h,z)],right);
     // Top face
-    poly([pt(x,y+h,z),pt(x+w,y+h,z),pt(x+w,y+h,z+d),pt(x,y+h,z+d)].join(" "),c.top,1);
-    // Front face (Z=z, facing viewer-left)
-    poly([pt(x,y,z),pt(x+w,y,z),pt(x+w,y+h,z),pt(x,y+h,z)].join(" "),c.front,1);
-    // Left face: x, y..y+h, z..z+d  (same as back-X but this is the near-Z side — brightest side)
-    // Actually for iso, the left face is the Z=0 face (already drawn as front)
-    // and the right face is Z=D (darker, drawn above as back-Z)
-  }
-  // Isometric box: top+left+right faces only (no back, painter's order)
-  function isoBox(x,y,z,w,h,d,top,left,right,opacity=1){
-    if(d>0){
-      // Right face: x=x+w, spans z=0..d, y=0..h
-      poly([pt(x+w,y,z),pt(x+w,y,z+d),pt(x+w,y+h,z+d),pt(x+w,y+h,z)].join(" "),right,opacity);
-    }
-    if(w>0){
-      // Left face: z=z+d, spans x=0..w, y=0..h
-      poly([pt(x,y,z+d),pt(x+w,y,z+d),pt(x+w,y+h,z+d),pt(x,y+h,z+d)].join(" "),left,opacity);
-    }
-    // Top face
-    poly([pt(x,y+h,z),pt(x+w,y+h,z),pt(x+w,y+h,z+d),pt(x,y+h,z+d)].join(" "),top,opacity);
-    // Front face: z=z, spans x=0..w, y=0..h (most visible for straight runs)
-    poly([pt(x,y,z),pt(x+w,y,z),pt(x+w,y+h,z),pt(x,y+h,z)].join(" "),left,opacity);
+    if(w>0&&d>0) face([P(x,y+h,z),P(x+w,y+h,z),P(x+w,y+h,z+d),P(x,y+h,z+d)],top);
+    // Front face (Z=z, drawn last = on top of everything)
+    if(w>0&&h>0) face([P(x,y,z),P(x+w,y,z),P(x+w,y+h,z),P(x,y+h,z)],front);
+    g.globalAlpha=1;
   }
 
-  // ── Scene ─────────────────────────────────────────────────────────────────
+  // ── Scene background ───────────────────────────────────────────────────
   // Floor
-  const fz=D+600, fx=W0+(isL?W1:0)+200;
-  poly([pt(-200,0,-200),pt(fx,0,-200),pt(fx,0,fz),pt(-200,0,fz)].join(" "),floor_c);
+  face([P(-200,0,-200),P(W0+200,0,-200),P(W0+200,0,D+(isL?W1:0)+200),P(-200,0,D+(isL?W1:0)+200)],W.floor);
   // Back wall
-  poly([pt(-100,0,D),pt(W0+100,0,D),pt(W0+100,H+200,D),pt(-100,H+200,D)].join(" "),wall_c);
-  if(isL){
-    poly([pt(W0,0,D),pt(W0,0,D+W1+100),pt(W0,H+200,D+W1+100),pt(W0,H+200,D)].join(" "),
-         dark?"#202428":"#D8D4CC");
-  }
+  face([P(-80,0,D),P(W0+80,0,D),P(W0+80,H+200,D),P(-80,H+200,D)],W.wall);
+  // Side wall for L
+  if(isL) face([P(W0,0,D),P(W0,0,D+W1+80),P(W0,H+200,D+W1+80),P(W0,H+200,D)],W.wallS);
   // Floor shadow under unit
-  poly([pt(0,1,0),pt(W0,1,0),pt(W0,1,D),pt(0,1,D)].join(" "),shadow,1);
+  g.globalAlpha=0.18; g.fillStyle="#000";
+  face([P(0,1,0),P(W0,1,0),P(W0,1,D),P(0,1,D)]);
+  g.globalAlpha=1;
 
-  function drawWall(w,zOff,along){
-    // along=0: bays run along X (left wall or straight)
-    // along=1: bays run along Z (right wall of L)
+  // ── Draw one wall's bays ────────────────────────────────────────────────
+  // along=0: bays run along X (normal wall). uprights at x0, x0+W
+  // along=1: bays run along Z (right wall of L). uprights at z0, z0+W; unit at x=W0-D
+  function drawWall(w,along){
     if(!w||!w.bays) return;
-    const bays=w.bays;
-    const totes_only=b=>b.items.filter(it=>it.boxes>0);
+    // Paint order: for along=0, paint right bays first (higher X = further from viewer-left)
+    // For along=1, paint further bays first (higher Z = further)
+    const bays=[...w.bays].sort((a,b)=>b.i-a.i); // right-to-left (right drawn first = behind)
 
-    // Sort: back-to-front (for iso, draw left/far bays before right/near)
-    const sorted=[...bays];
-    // For along=0 (X axis): right bays occlude left → draw left first (ascending X)
-    // For along=1 (Z axis): near bays occlude far → draw far first (ascending Z = ascending X in bay space)
-    // Iso: X goes right-up, Z goes left-up. "Behind" means larger X+Z.
-    // Draw bays sorted by (x0+z0) ascending so further ones are drawn first.
+    bays.forEach(bay=>{
+      const BW=bay.W; // bay clear width (mm)
+      // Position in scene
+      const x0=along===0 ? bay.x0-w.offset : W0-D;
+      const z0=along===0 ? 0               : D+(bay.x0-w.offset);
+      const bwd=along===0 ? BW : D;  // bay width along X
+      const bdd=along===0 ? D  : BW; // bay depth along Z
 
-    function bx(b){return along===0?b.x0-w.offset:W0-D;} // along=1: X from W0-D to W0
-    function bz(b){return along===0?zOff:D+(b.x0-w.offset);} // along=1: Z starts at D
-
-    sorted.sort((a,b)=>{const ax=bx(a),az=bz(a),bX=bx(b),bZ=bz(b);return(ax+az)-(bX+bZ);});
-
-    sorted.forEach(bay=>{
-      const x0=bx(bay), z0=bz(bay);
-      const BW=bay.W; // always the bay width
-      const BD=D;     // always the shelf depth
-      // For along=1: bay runs in Z direction (x0=W0-D, z0=D+offset)
-
-      // Shelf boards and rails
+      // ── Shelves (back to front in Z, so draw in reverse z order)
+      // For along=0: shelves span x0..x0+BW, z=0..D (we draw all the same)
+      // For along=1: shelves span x=W0-D..W0, z=z0..z0+BW
       bay.items.forEach(it=>{
         const iy=it.h, ib=it.kind==="bench", th=ib?PLY*2:PLY;
-        const shelfC=ib?bench:shelf;
-        // Rail (under shelf, full depth)
-        isoBox(x0,iy,z0, BW,T,BD, wood.topM,wood.frontM,wood.sideM);
-        // Shelf board on top
-        isoBox(x0,iy+T,z0, BW,th,BD, shelfC.top,shelfC.front,shelfC.side);
+        const [cT,cF,cS]=ib?[W.bT,W.bF,W.bS]:[W.sT,W.sF,W.sS];
+        // Rail (under shelf)
+        box(x0,iy,z0, bwd,TH,bdd, W.rT,W.rF,W.rS);
+        // Board
+        box(x0,iy+TH,z0, bwd,th,bdd, cT,cF,cS);
         // Totes
-        if(it.boxes>0&&it.kind==="shelf"){
+        if(it.boxes>0&&it.kind==="shelf"&&!it.open){
           const tH=Math.min(it.clear-25,spec.box.h);
-          const tFront=spec.box.orientation==="long"?spec.box.l:spec.box.w;
-          const tDep=spec.box.orientation==="long"?spec.box.w:spec.box.l;
-          const tDep_=Math.min(tDep,BD-20);
-          const totW=it.boxes*tFront+(it.boxes-1)*30;
-          const pad=(BW-totW)/2;
-          for(let j=0;j<it.boxes;j++){
-            const tx=along===0?x0+pad+j*(tFront+30):x0+8;
-            const tz=along===0?z0+8:z0+pad+j*(tFront+30);
-            const tw=along===0?tFront:tDep_;
-            const td=along===0?tDep_:tFront;
-            isoBox(tx,iy+T+th,tz, tw,tH,td, tote.top,tote.front,tote.side);
-            // Lid strip
-            isoBox(tx,iy+T+th+tH-14,tz, tw,14,td, lid.top,lid.front,lid.side);
+          const tF=spec.box.orientation==="long"?spec.box.l:spec.box.w;
+          const tD_=spec.box.orientation==="long"?spec.box.w:spec.box.l;
+          const tD=Math.min(tD_,bdd-30);
+          const totW=it.boxes*tF+(it.boxes-1)*30;
+          const pad=(bwd-totW)/2;
+          // Draw totes right-to-left (right tote behind in projection)
+          for(let j=it.boxes-1;j>=0;j--){
+            const tx=along===0?x0+pad+j*(tF+30):x0+15;
+            const tz=along===0?z0+15            :z0+pad+j*(tF+30);
+            const tw=along===0?tF:tD, td=along===0?tD:tF;
+            const ty=iy+TH+th;
+            box(tx,ty,tz, tw,tH,td, W.tT,W.tF,W.tS);
+            // Lid (top 16mm stripe)
+            box(tx,ty+tH-16,tz, tw,16,td, W.lT,W.lF,W.lS);
           }
         }
+        // Pegboard for bench
+        if(ib){
+          const up=bay.items.find(i=>i.kind==="shelf"&&i.h>iy+th+100);
+          const ptop=up?up.h:iy+th+650;
+          box(x0,iy+th,z0+bdd-15, bwd,ptop-(iy+th),15, W.pT,W.pF,W.pS);
+        }
       });
-      // Pegboard for bench bay
-      if(bay.bench){
-        const wb=spec.workbench;
-        const up=bay.items.find(i=>i.kind==="shelf"&&i.h>wb.height);
-        const top2=up?up.h:wb.height+650;
-        // Thin pegboard slab
-        isoBox(x0,wb.height,z0, BW,top2-wb.height,15, peg.top,peg.front,peg.side);
-      }
-      // Uprights: at every bay boundary
+
+      // ── Uprights (at bay boundaries, drawn AFTER shelves so they're in front)
       const isLast=bay.i===w.bays.length-1;
-      [0,...(isLast?[BW]:[])].forEach(off=>{
-        // Uprights: for along=0 they're at x=x0+off, span D in Z
-        //           for along=1 they're at z=z0+off, span D in X
-        const ux=along===0?x0+off:x0;
-        const uz=along===0?z0:z0+off;
-        const uw=along===0?T:BD, ud=along===0?BD:T;
-        isoBox(ux,0,uz, uw,H,ud, wood.topL,wood.frontL,wood.sideL);
-        // Grain lines
-        poly([pt(ux,H*0.3,uz),pt(ux+uw*0.3,H*0.3,uz),pt(ux+uw*0.3,H*0.55,uz),pt(ux,H*0.55,uz)].join(" "),wood.grain,1);
-        poly([pt(ux,H*0.65,uz),pt(ux+uw*0.6,H*0.65,uz),pt(ux+uw*0.6,H*0.8,uz),pt(ux,H*0.8,uz)].join(" "),wood.grain,1);
+      const offsets=[0,...(isLast?[BW]:[])];
+      offsets.forEach(off=>{
+        if(along===0){
+          box(x0+off,0,0, TH,H,D, W.uT,W.uF,W.uS);
+        } else {
+          box(x0,0,z0+off, D,H,TH, W.uT,W.uF,W.uS);
+        }
       });
-      // Tall bay ladder hint
-      if(bay.tall){
-        const lx=along===0?x0+BW*0.18:x0+8, lz=along===0?z0+8:z0+BW*0.18;
-        const lw=along===0?BW*0.64:D-16, lh=H*0.85;
-        // Two rails
-        isoBox(lx,0,lz, 25,lh,12, "#C0A878","#A88A58","#806830");
-        isoBox(along===0?lx+lw:lx, 0, along===0?lz:lz+lw, 25,lh,12, "#C0A878","#A88A58","#806830");
-        // Rungs
-        for(let r=200;r<lh;r+=260){
-          const rz=along===0?lz:lz+r/lh*(lw-25);
-          const rx=along===0?lx+r/lh*(lw-25):lx;
-          isoBox(rx,r-8,rz, along===0?BW*0.64-25:25, 16, along===0?12:lw-25, "#B09060","#967840","#705A20");
+
+      // ── Tall bay: simple ladder silhouette
+      if(bay.tall&&!along){
+        const lx=x0+BW*0.2, lh=H*0.88, rungW=BW*0.6;
+        box(lx,0,D*0.5-12, 25,lh,24, "#C0A878","#A88A58","#806830");
+        box(lx+rungW,0,D*0.5-12, 25,lh,24, "#C0A878","#A88A58","#806830");
+        for(let r=180;r<lh-100;r+=240){
+          box(lx+25,r,D*0.5-8, rungW-25,20,16, "#B09060","#987840","#705820");
         }
       }
     });
+
+    // Top caps: draw a continuous cap rail across the top of all uprights
+    // (this makes it look like the reference photo — clean top rail)
+    const wx=along===0?w.bays[0].x0-w.offset:W0-D;
+    const wz=along===0?0:D+(w.bays[0].x0-w.offset);
+    const lastBay=w.bays[w.bays.length-1];
+    const wEnd=along===0?lastBay.x0-w.offset+lastBay.W+TH:W0;
+    const wzEnd=along===0?D:D+(lastBay.x0-w.offset+lastBay.W+TH);
+    if(along===0) box(wx,H,0, wEnd-wx,TH,D, W.uT,W.uF,W.uS);
+    else          box(W0-D,H,wz, D,TH,wzEnd-wz, W.uT,W.uF,W.uS);
   }
 
-  // svgH already computed above
-  let defs=`<defs>
-    <filter id="drop" x="-10%" y="-10%" width="130%" height="130%">
-      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.25"/>
-    </filter>
-    <filter id="glow" x="-10%" y="-10%" width="130%" height="130%">
-      <feGaussianBlur stdDeviation="3" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>`;
+  // ── Render walls ────────────────────────────────────────────────────────
+  // For straight: just left wall
+  // For L: draw right wall FIRST (it's behind), then left wall on top
+  if(isL&&walls[1]) drawWall(walls[1],1);
+  drawWall(walls[0],0);
 
-  // Clear and build
-  svgParts=[];
-  // Left wall
-  drawWall(walls[0],0,0);
-  // Right wall for L
-  if(isL&&walls[1]) drawWall(walls[1],D,1);
-
-  // Assemble SVG with a subtle background gradient
-  const bg=dark?`<rect width="${CW}" height="${svgH}" fill="url(#bggrad)"/>`:
-                 `<rect width="${CW}" height="${svgH}" fill="url(#bggrad)"/>`;
-  const bgGrad=dark?
-    `<linearGradient id="bggrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A1C20"/><stop offset="1" stop-color="#25282E"/></linearGradient>`:
-    `<linearGradient id="bggrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EBEBEA"/><stop offset="1" stop-color="#DEDED9"/></linearGradient>`;
-
-  const note=`<text x="10" y="${svgH-10}" font-family="var(--font-body,sans-serif)" font-size="12" fill="${dark?"rgba(255,255,255,0.3)":"rgba(0,0,0,0.28)"}">3D view \u2014 indicative only</text>`;
-
-  cv.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" width="${CW}" height="${svgH}" style="display:block;border-radius:6px;overflow:visible">
-  <defs>${bgGrad}${defs.slice(6)}</defs>
-  ${bg}
-  ${svgParts.join("\n  ")}
-  ${note}
-  </svg>`;
+  // ── Note ────────────────────────────────────────────────────────────────
+  g.globalAlpha=0.35; g.fillStyle=dark?"#fff":"#000";
+  g.font=`${Math.round(CW*0.014)}px var(--font-body,system-ui,sans-serif)`;
+  g.fillText("3D view — indicative, not to scale",10,CH-10);
+  g.globalAlpha=1;
 }
 /* form sync */
 const F=id=>$("f-"+id), toCm=mm=>Math.round(mm)/10, toMm=v=>Math.round(parseFloat(v)*10);
