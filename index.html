@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tote rack planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E3E5E1; --surface:#F6F6F3; --surface-2:#ECEDE9; --text:#1D2023; --muted:#5B6063; --line:#C6C9C4;
+  --head:#1D2023; --head-text:#F2F2EE; --lid:#F2C230; --lid-ink:#3A2E05;
+  --timber:#D9B67C; --timber-edge:#9C7A42; --bench:#B98F52; --tote:#2A2D30; --tote-edge:#111315;
+  --peg:#E6DAC0; --danger:#A8391F; --danger-bg:#F5E3DC; --note-bg:#EFEADB; --focus:#1F5FA8;
+  --font-display:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --font-body:"Barlow","Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15171A; --surface:#1F2225; --surface-2:#282B2F; --text:#E7E7E2; --muted:#A3A7A9; --line:#3A3E43;
+    --head:#0D0E10; --head-text:#F2F2EE; --lid:#E8B923; --lid-ink:#2E2404;
+    --timber:#B8945A; --timber-edge:#7A5C2D; --bench:#9A7440; --tote:#3C4046; --tote-edge:#6A7078;
+    --peg:#3B352B; --danger:#F08C6E; --danger-bg:#3A231C; --note-bg:#2C2A22; --focus:#7FB0EE;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15171A; --surface:#1F2225; --surface-2:#282B2F; --text:#E7E7E2; --muted:#A3A7A9; --line:#3A3E43;
+  --head:#0D0E10; --head-text:#F2F2EE; --lid:#E8B923; --lid-ink:#2E2404;
+  --timber:#B8945A; --timber-edge:#7A5C2D; --bench:#9A7440; --tote:#3C4046; --tote-edge:#6A7078;
+  --peg:#3B352B; --danger:#F08C6E; --danger-bg:#3A231C; --note-bg:#2C2A22; --focus:#7FB0EE;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:16px;line-height:1.5}
+h1,h2,h3{font-family:var(--font-display);font-weight:600;margin:0;letter-spacing:.005em}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.top{background:var(--head);color:var(--head-text);border-bottom:12px solid var(--lid)}
+.top-inner{max-width:1400px;margin:0 auto;padding:22px 20px 18px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 20px}
+.top h1{font-size:34px;line-height:1.05}
+.top p{margin:0;color:#C9CBC7;max-width:60ch}
+.app{max-width:1400px;margin:0 auto;padding:20px;display:grid;grid-template-columns:minmax(300px,400px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:900px){.app{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.side{position:sticky;top:12px}
+@media (max-width:900px){.side{position:static}}
+.seg{display:flex;border-bottom:1px solid var(--line)}
+.seg button{flex:1;border:0;background:transparent;padding:12px;font-family:var(--font-display);font-weight:600;font-size:17px;cursor:pointer;color:var(--muted);border-bottom:3px solid transparent}
+.seg button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--lid)}
+.tabbody{padding:16px}
+.chatlog{display:flex;flex-direction:column;gap:10px;max-height:46vh;min-height:180px;overflow-y:auto;padding-right:4px}
+.msg{padding:10px 12px;border-radius:6px;max-width:92%;white-space:pre-wrap;font-size:15px}
+.msg.ai{background:var(--surface-2);align-self:flex-start}
+.msg.me{background:var(--head);color:var(--head-text);align-self:flex-end}
+.msg.err{background:var(--danger-bg);color:var(--danger)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 11px;font-size:14px;cursor:pointer;text-align:left}
+.chip:hover{border-color:var(--text)}
+.composer{display:flex;gap:8px;align-items:flex-end}
+.composer textarea{flex:1;min-height:64px;resize:vertical;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.btn{border:1px solid var(--text);background:var(--text);color:var(--surface);padding:9px 14px;border-radius:6px;cursor:pointer;font-weight:500}
+.btn.ghost{background:transparent;color:var(--text)}
+.btn.lid{background:var(--lid);border-color:var(--lid);color:var(--lid-ink)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.hint{color:var(--muted);font-size:14px;margin:8px 0 0}
+form fieldset{border:0;border-top:1px solid var(--line);margin:0;padding:14px 0 6px}
+form fieldset:first-child{border-top:0;padding-top:0}
+legend{font-family:var(--font-display);font-weight:600;font-size:17px;padding:0 0 8px;float:left;width:100%}
+fieldset>*:not(legend){clear:both}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:14px;color:var(--muted)}
+label.f input,label.f select{padding:7px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text);font-size:15px;width:100%}
+label.c{display:flex;gap:8px;align-items:center;font-size:15px;margin:6px 0}
+.main{display:flex;flex-direction:column;gap:20px;min-width:0}
+.viewbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+.viewbar .sp{flex:1}
+.vbtn{border:1px solid var(--line);background:transparent;border-radius:5px;padding:6px 12px;cursor:pointer}
+.vbtn[aria-pressed="true"]{background:var(--text);color:var(--surface);border-color:var(--text)}
+.stats{display:flex;flex-wrap:wrap;gap:4px 28px;padding:14px 16px 0}
+.stat b{font-family:var(--font-display);font-size:30px;font-weight:600;display:block;line-height:1}
+.stat span{color:var(--muted);font-size:14px}
+.drawwrap{padding:10px 12px 14px;overflow-x:auto}
+svg.draw{width:100%;height:auto;display:block;min-width:560px}
+.wallbg{fill:var(--surface-2)}
+.ceil{stroke:var(--muted);stroke-dasharray:6 5;stroke-width:1}
+.floor{stroke:var(--text);stroke-width:2}
+.upr{fill:var(--timber);stroke:var(--timber-edge);stroke-width:1}
+.band{fill:var(--timber);stroke:var(--timber-edge);stroke-width:1}
+.benchtop{fill:var(--bench);stroke:var(--timber-edge);stroke-width:1}
+.tote{fill:var(--tote);stroke:var(--tote-edge);stroke-width:1}
+.lid{fill:var(--lid)}
+.peg{fill:var(--peg);stroke:var(--timber-edge);stroke-width:.6;stroke-dasharray:3 3}
+.hatchline{stroke:var(--line);stroke-width:2}
+.blocked{fill:var(--surface-2);stroke:var(--line)}
+.lbl{fill:var(--muted);font-family:var(--font-body);font-size:13px}
+.lbl.strong{fill:var(--text);font-weight:500}
+.dim{stroke:var(--muted);stroke-width:1}
+.wall{stroke:var(--text);stroke-width:5;stroke-linecap:square}
+.unit{fill:var(--timber);fill-opacity:.35;stroke:var(--timber-edge)}
+.unit.bench{fill:var(--bench);fill-opacity:.7}
+.warns{margin:0;padding:0 16px 14px;list-style:none;display:flex;flex-direction:column;gap:6px}
+.warns li{background:var(--note-bg);border-left:4px solid var(--lid);padding:8px 12px;font-size:15px;border-radius:0}
+.warns li.bad{background:var(--danger-bg);border-left-color:var(--danger)}
+.sec{padding:18px 16px;border-top:1px solid var(--line)}
+.sec:first-child{border-top:0}
+.sec h2{font-size:22px;margin-bottom:10px}
+.sec h3{font-size:18px;margin:16px 0 8px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tbl{width:100%;border-collapse:collapse;font-size:15px}
+.tbl th{font-family:var(--font-display);font-weight:600;text-align:left;border-bottom:2px solid var(--text);padding:6px 8px}
+.tbl td{border-bottom:1px solid var(--line);padding:6px 8px;vertical-align:top}
+.tbl td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tblwrap{overflow-x:auto}
+.bars{display:flex;flex-direction:column;gap:8px}
+.barrow{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center;font-size:14px}
+.bar{display:flex;height:26px;background:var(--surface-2);border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.cut{background:var(--timber);border-right:2px solid var(--surface);display:flex;align-items:center;justify-content:center;font-size:12px;color:#2B2112;white-space:nowrap;overflow:hidden}
+.sheets{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.sheets figure{margin:0}
+.sheets figcaption{font-size:14px;color:var(--muted);margin-top:4px}
+.sheets svg{width:100%;height:auto;display:block}
+.sh-bg{fill:var(--surface-2);stroke:var(--text);stroke-width:2}
+.sh-pc{fill:var(--timber);stroke:var(--timber-edge);stroke-width:2}
+.sh-t{fill:#2B2112;font-family:var(--font-body);font-size:120px}
+ol.steps{margin:0;padding-left:22px}
+ol.steps li{margin:4px 0;max-width:75ch}
+.fine{color:var(--muted);font-size:14px;max-width:75ch}
+.status{font-size:14px;color:var(--muted)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion:no-preference){.msg{animation:in .18s ease-out}@keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <h1>Tote rack planner</h1>
+  <p>Describe your garage wall, and get timber-and-ply shelving sized around your boxes, with a full cut list.</p>
+</div></header>
+
+<div class="app">
+  <aside class="side panel">
+    <div class="seg" role="tablist">
+      <button role="tab" id="tab-chat" aria-selected="true" aria-controls="pane-chat">Describe</button>
+      <button role="tab" id="tab-form" aria-selected="false" aria-controls="pane-form">Adjust</button>
+    </div>
+    <div class="tabbody" id="pane-chat" role="tabpanel" aria-labelledby="tab-chat">
+      <div class="chatlog" id="chatlog" aria-live="polite"></div>
+      <div class="chips" id="chips">
+        <button class="chip">Corner setup: left wall 1.2 m, right wall 2.1 m</button>
+        <button class="chip">Make the bottom section 1.2 m tall, then two shelves above</button>
+        <button class="chip">No workbench, and my boxes go in short end first</button>
+        <button class="chip">Ceiling is 2.1 m and I want 40 cm deep shelves</button>
+      </div>
+      <div class="composer">
+        <label for="msg" class="sr">Describe what you want</label>
+        <textarea id="msg" placeholder="e.g. One wall, 3.5 m long, bench on the left at 95 cm"></textarea>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="btn lid" id="send" disabled>Send</button>
+          <button class="btn ghost" id="stop" hidden>Stop</button>
+        </div>
+      </div>
+      <p class="hint" id="chatstatus">Connecting to Claude…</p>
+    </div>
+    <div class="tabbody" id="pane-form" role="tabpanel" aria-labelledby="tab-form" hidden>
+      <form id="form" autocomplete="off">
+        <fieldset><legend>Walls</legend>
+          <label class="f">Layout<select id="f-layout"><option value="straight">One straight wall</option><option value="L">Corner (L-shape)</option></select></label>
+          <div class="grid2" style="margin-top:10px">
+            <label class="f"><span id="lab-wa">Wall length (cm)</span><input id="f-wa" type="number" min="60" step="1"></label>
+            <label class="f" id="wrap-wb">Right wall (cm)<input id="f-wb" type="number" min="60" step="1"></label>
+            <label class="f">Ceiling height (cm)<input id="f-ceil" type="number" min="150" step="1"></label>
+            <label class="f">Upright height (cm)<input id="f-uh" type="number" min="90" step="1"></label>
+            <label class="f">Shelf depth (cm)<input id="f-depth" type="number" min="30" step="1"></label>
+          </div>
+        </fieldset>
+        <fieldset><legend>Your boxes (outside, lid on)</legend>
+          <div class="grid3">
+            <label class="f">Length (cm)<input id="f-bl" type="number" min="10" step="0.5"></label>
+            <label class="f">Width (cm)<input id="f-bw" type="number" min="10" step="0.5"></label>
+            <label class="f">Height (cm)<input id="f-bh" type="number" min="10" step="0.5"></label>
+          </div>
+          <div class="grid2" style="margin-top:10px">
+            <label class="f">Facing out<select id="f-ori"><option value="long">Long side</option><option value="short">Short end</option></select></label>
+            <label class="f">Boxes per shelf<select id="f-bpb"><option value="auto">Auto</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+          </div>
+        </fieldset>
+        <fieldset><legend>Bays and shelves</legend>
+          <label class="c"><input type="checkbox" id="f-fill"> Stretch bays to fill the wall</label>
+          <div class="grid2">
+            <label class="f">Fixed bay width (cm)<input id="f-bay" type="number" min="30" step="1" placeholder="Auto"></label>
+            <label class="f">Shelf heights<select id="f-lm"><option value="auto">Fit to boxes</option><option value="custom">Custom</option></select></label>
+          </div>
+          <label class="f" style="margin-top:10px">Shelf top heights from floor (cm)<input id="f-levels" type="text" placeholder="12, 66, 120, 174"></label>
+        </fieldset>
+        <fieldset><legend>Workbench</legend>
+          <label class="c"><input type="checkbox" id="f-bench"> Include a workbench bay</label>
+          <div class="grid2">
+            <label class="f" id="wrap-bwall">On wall<select id="f-bwall"><option value="0">Left wall</option><option value="1">Right wall</option></select></label>
+            <label class="f">Position<select id="f-bat"><option value="start">Left end</option><option value="middle">Middle</option><option value="end">Right end</option></select></label>
+            <label class="f">Bench height (cm)<input id="f-bhgt" type="number" min="70" step="1"></label>
+          </div>
+          <label class="c"><input type="checkbox" id="f-upper"> Shelf above the bench for lights</label>
+        </fieldset>
+        <fieldset><legend>Materials</legend>
+          <div class="grid2">
+            <label class="f">Frame timber<select id="f-frame"><option value="38x89">38 × 89 CLS</option><option value="47x100">47 × 100 C24</option></select></label>
+            <label class="f">Shelf boards<select id="f-sheet"><option value="ply18">18 mm plywood</option><option value="osb18">18 mm OSB3</option></select></label>
+          </div>
+        </fieldset>
+        <div class="actions" style="margin-top:8px"><button type="button" class="btn ghost" id="reset">Reset to example</button></div>
+      </form>
+    </div>
+  </aside>
+
+  <main class="main">
+    <section class="panel" aria-label="Drawing">
+      <div class="viewbar" id="viewbar"></div>
+      <div class="stats" id="stats"></div>
+      <div class="drawwrap" id="drawing"></div>
+      <ul class="warns" id="warns"></ul>
+    </section>
+    <section class="panel" aria-label="Materials and cut list">
+      <div class="sec">
+        <h2>Shopping list</h2>
+        <div class="tblwrap" id="shop"></div>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn" id="dl-plan">Download plan</button>
+          <button class="btn ghost" id="dl-csv">Download cut list (CSV)</button>
+          <button class="btn ghost" id="copy-csv">Copy cut list</button>
+          <span class="status" id="dlstatus" role="status"></span>
+        </div>
+      </div>
+      <div class="sec"><h2>Cut list</h2><div class="tblwrap" id="cuts"></div></div>
+      <div class="sec"><h2>Cutting plan</h2>
+        <h3>Timber lengths</h3><div class="bars" id="bars"></div>
+        <h3>Sheets</h3><div class="sheets" id="sheets"></div>
+      </div>
+      <div class="sec"><h2>Build order</h2><ol class="steps" id="steps"></ol>
+        <p class="fine" style="margin-top:12px">Sizing uses conservative rules of thumb, not an engineer's calculation. Measure your boxes and walls before cutting, fix every frame to the wall, and check fixings suit your wall type. Quantities are estimates; buy about 10% extra timber.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ---------- Engine (pure) ---------- */
+const SECTIONS={
+  "38x89":{b:38,h:89,label:"38 × 89 mm CLS",maxSpan:1800},
+  "47x100":{b:47,h:100,label:"47 × 100 mm C24",maxSpan:2200}
+};
+const SHEETS={ply18:"18 mm plywood",osb18:"18 mm OSB3"};
+const STOCK=[2400,3000,3600], SHEET={w:2440,h:1220}, KERF=3, GAP=30, PLY=18;
+const DEFAULT_SPEC={
+  layout:"straight",
+  walls:[{name:"Wall",length:5300},{name:"Right wall",length:2100}],
+  ceiling:2300, unitHeight:2200, depth:600,
+  box:{l:770,w:510,h:380,orientation:"long"},
+  boxesPerBay:"auto", bayClear:null, fillWall:true,
+  levelsMode:"auto", levels:[120,660,1200,1740],
+  workbench:{enabled:true,wall:0,at:"end",height:920,upperShelf:true},
+  frame:"38x89", sheet:"ply18"
+};
+function num(v,a,b,d){v=Number(v);if(!isFinite(v))return d;return Math.min(b,Math.max(a,v));}
+function sanitize(s){
+  const d=DEFAULT_SPEC; s=(s&&typeof s==="object")?s:{};
+  const o={};
+  o.layout=s.layout==="L"?"L":"straight";
+  const w=Array.isArray(s.walls)?s.walls:[];
+  o.walls=[0,1].map(i=>{const x=w[i]||{};return{name:String(x.name||d.walls[i].name).slice(0,28),length:Math.round(num(x.length,600,20000,d.walls[i].length))};});
+  o.ceiling=Math.round(num(s.ceiling,1500,5000,d.ceiling));
+  o.unitHeight=Math.round(num(s.unitHeight,900,o.ceiling-20,Math.min(o.ceiling-100,2400)));
+  o.depth=Math.round(num(s.depth,300,1200,d.depth));
+  const b=s.box||{};
+  o.box={l:Math.round(num(b.l,100,1500,d.box.l)),w:Math.round(num(b.w,100,1500,d.box.w)),h:Math.round(num(b.h,100,1500,d.box.h)),orientation:b.orientation==="short"?"short":"long"};
+  const k=Number(s.boxesPerBay); o.boxesPerBay=[1,2,3,4].includes(k)?k:"auto";
+  o.bayClear=s.bayClear?Math.round(num(s.bayClear,300,3000,null)):null;
+  o.fillWall=s.fillWall!==false;
+  o.levelsMode=s.levelsMode==="custom"?"custom":"auto";
+  let lv=(Array.isArray(s.levels)?s.levels:[]).map(Number).filter(v=>isFinite(v)&&v>=40&&v<=o.unitHeight).map(Math.round).sort((a,b)=>a-b);
+  lv=lv.filter((v,i)=>i===0||v-lv[i-1]>=120);
+  o.levels=lv; if(o.levelsMode==="custom"&&!lv.length)o.levelsMode="auto";
+  const wb=s.workbench||{};
+  o.workbench={enabled:wb.enabled===undefined?d.workbench.enabled:!!wb.enabled,
+    wall:(o.layout==="L"&&Number(wb.wall)===1)?1:0,
+    at:["start","middle","end"].includes(wb.at)?wb.at:"end",
+    height:Math.round(num(wb.height,700,1200,920)),upperShelf:wb.upperShelf!==false};
+  o.frame=SECTIONS[s.frame]?s.frame:"38x89";
+  o.sheet=s.sheet==="osb18"?"osb18":"ply18";
+  return o;
+}
+function autoLevels(spec,sec){
+  const first=sec.h+PLY+13, pitch=spec.box.h+50+PLY+sec.h, out=[];
+  for(let v=first;v<=spec.unitHeight;v+=pitch)out.push(Math.round(v/5)*5);
+  return out;
+}
+function globalLevels(spec,sec,warn){
+  if(spec.levelsMode==="auto")return autoLevels(spec,sec);
+  const min=sec.h+PLY+5; let lv=spec.levels.slice();
+  if(lv[0]<min){warn.push({t:`The lowest shelf needs to be at least ${Math.ceil(min/10)} cm up so the rail clears the floor, so it was raised.`});lv[0]=min;}
+  return lv;
+}
+function computeWall(spec,wi,warn){
+  const sec=SECTIONS[spec.frame],t=sec.h,b=sec.b,railH=sec.h;
+  const wall=spec.walls[wi], isL=spec.layout==="L";
+  const start=(isL&&wi===1)?spec.depth:0, L=wall.length-start;
+  const long=spec.box.orientation==="long";
+  const f=long?spec.box.l:spec.box.w, boxD=long?spec.box.w:spec.box.l;
+  let k=spec.boxesPerBay;
+  if(k==="auto"){k=1;for(let c=3;c>=1;c--){if(c*f+(c+1)*GAP<=sec.maxSpan){k=c;break;}}}
+  let W0=spec.bayClear||(k*f+(k+1)*GAP);
+  if(W0>sec.maxSpan){warn.push({t:`${k} boxes side by side needs ${Math.round(W0/10)} cm between uprights, more than the ${Math.round(sec.maxSpan/10)} cm limit for ${sec.label} rails, so bays were narrowed.`,bad:true});W0=sec.maxSpan;}
+  const base={wi,name:wall.name,length:wall.length,start,L,bays:[],n:0,W:0,used:0,spare:L,offset:start,t,f,boxD};
+  let n=Math.floor((L-t)/(W0+t)),W;
+  if(n<1){
+    if(L-2*t>=300){n=1;W=Math.min(L-2*t,sec.maxSpan);}
+    else{warn.push({t:`${wall.name} is too short for a bay once the corner unit is allowed for.`,bad:true});return base;}
+  }else if(spec.fillWall&&!spec.bayClear){W=(L-(n+1)*t)/n;while(W>sec.maxSpan){n++;W=(L-(n+1)*t)/n;}}
+  else W=W0;
+  W=Math.floor(W);
+  const used=n*W+(n+1)*t, spare=L-used;
+  const offset=start+((isL&&wi===0)?spare:0);
+  const perShelf=Math.max(0,Math.floor((W-GAP)/(f+GAP)));
+  if(perShelf===0)warn.push({t:`Bays on ${wall.name} are ${Math.round(W/10)} cm wide, too narrow for a box ${Math.round(f/10)} cm across. They'll still hold smaller items.`,bad:true});
+  const lv=globalLevels(spec,sec,warn);
+  const wb=spec.workbench, benchHere=wb.enabled&&wb.wall===wi;
+  const benchIdx=benchHere?(wb.at==="start"?0:wb.at==="middle"?Math.floor((n-1)/2):n-1):-1;
+  const thick=kind=>(kind==="bench"?2*PLY:PLY)+railH;
+  const bays=[];
+  for(let i=0;i<n;i++){
+    const isBench=i===benchIdx;
+    let items;
+    if(isBench){
+      const under=wb.height-thick("bench");
+      const below=lv.filter(l=>l+150<=under);
+      let above=[];
+      if(wb.upperShelf){
+        above=lv.filter(l=>l-PLY-railH>=wb.height+600);
+        if(!above.length){const c=Math.round(wb.height+700+PLY+railH);if(c<=spec.unitHeight)above=[c];}
+      }
+      items=[...below.map(h=>({h,kind:"shelf"})),{h:wb.height,kind:"bench"},...above.map(h=>({h,kind:"shelf"}))];
+    }else items=lv.map(h=>({h,kind:"shelf"}));
+    items.forEach((it,j)=>{
+      const nx=items[j+1];
+      it.clear=nx?(nx.h-thick(nx.kind)-it.h):(spec.ceiling-it.h);
+      it.boxes=(it.kind==="shelf"&&it.clear>=spec.box.h+20&&spec.depth>=boxD+10)?perShelf:0;
+    });
+    bays.push({i,x0:offset+t+i*(W+t),W,bench:isBench,items});
+  }
+  return {...base,bays,n,W,used,spare,offset,perShelf};
+}
+function computeAll(specIn){
+  const spec=sanitize(specIn), sec=SECTIONS[spec.frame], warn=[];
+  const t=sec.h,b=sec.b,railH=sec.h,H=spec.unitHeight;
+  const long=spec.box.orientation==="long", boxD=long?spec.box.w:spec.box.l;
+  if(spec.depth<boxD+10)warn.push({t:`Shelves are ${Math.round(spec.depth/10)} cm deep but your boxes need about ${Math.round((boxD+10)/10)} cm facing this way. Deepen the shelves or turn the boxes.`,bad:true});
+  const idx=spec.layout==="L"?[0,1]:[0];
+  const walls=idx.map(i=>computeWall(spec,i,warn));
+  const timber=[],panels=[],peg=[];
+  const fx={s80:0,s40:0,s25:0,wall:0,packers:0,glue:0,leds:0};
+  const crossLen=spec.depth-2*b;
+  walls.forEach(w=>{
+    if(!w.n)return;
+    const W=w.W, n=w.n, tag=w.name;
+    timber.push({name:"Upright",len:H,qty:(n+1)*2,wall:tag});
+    fx.packers+=(n+1)*2; fx.wall+=(n+1)*(H>1800?2:1);
+    for(let p=0;p<=n;p++){
+      const hs=new Set();[w.bays[p-1],w.bays[p]].forEach(bb=>bb&&bb.items.forEach(it=>hs.add(it.h)));
+      if(hs.size){timber.push({name:"Cross-member",len:crossLen,qty:hs.size,wall:tag});fx.s80+=hs.size*4;}
+    }
+    w.bays.forEach(bay=>{
+      const railLen=W+t+(bay.i===0?t/2:0)+(bay.i===n-1?t/2:0);
+      bay.items.forEach(it=>{
+        timber.push({name:it.kind==="bench"?"Bench rail":"Shelf rail",len:Math.round(railLen),qty:2,wall:tag});
+        fx.s80+=12;
+        const m=it.kind==="bench"?Math.max(2,Math.ceil(W/450)-1):Math.max(1,Math.ceil(W/700)-1);
+        timber.push({name:"Mid batten",len:crossLen,qty:m,wall:tag}); fx.s80+=m*4;
+        const edge=2*(Math.ceil(W/250)+1)+m*2;
+        if(it.kind==="bench"){panels.push({name:"Bench top (2 layers)",w:W,h:spec.depth,qty:2});fx.s40+=edge+Math.ceil(W/300)*4;fx.glue=1;}
+        else{panels.push({name:"Shelf board",w:W,h:spec.depth,qty:1});fx.s40+=edge;}
+      });
+      const shelves=bay.items.filter(it=>it.kind==="shelf");
+      if(bay.bench){
+        const up=bay.items.find(it=>it.kind==="shelf"&&it.h>spec.workbench.height);
+        const top=up?up.h-PLY-railH:spec.workbench.height+700;
+        const ph=Math.round(Math.min(top,H)-spec.workbench.height);
+        if(ph>=200){peg.push({name:"Bench back board",w:W,h:ph,qty:1});fx.s25+=2*Math.ceil(W/300)+2*Math.ceil(ph/300);}
+        if(up)fx.leds+=Math.ceil(W/1250);
+      }else if(shelves.length>=2){
+        const dx=W+t, dy=shelves[shelves.length-1].h-shelves[0].h, len=Math.hypot(dx,dy);
+        if(len<=STOCK[STOCK.length-1]){timber.push({name:"Back brace",len:Math.round(len),qty:1,wall:tag});}
+        else timber.push({name:"Back brace",len:Math.round(Math.hypot(dx,dy/2)),qty:2,wall:tag});
+        fx.s80+=shelves.length*2;
+      }
+    });
+  });
+  const pieces=[];timber.forEach(p=>{for(let i=0;i<p.qty;i++)pieces.push({len:p.len,name:p.name});});
+  const tplan=packTimber(pieces);
+  const sp=[];panels.forEach(p=>{for(let i=0;i<p.qty;i++)sp.push({w:p.w,h:p.h,name:p.name});});
+  const pp=[];peg.forEach(p=>{for(let i=0;i<p.qty;i++)pp.push({w:p.w,h:p.h,name:p.name});});
+  const splan=packSheets(sp), pplan=packSheets(pp);
+  if(tplan.tooLong.length)warn.push({t:`Some pieces are longer than ${STOCK[STOCK.length-1]/1000} m stock. Lower the uprights or split the braces.`,bad:true});
+  if(splan.oversize.length||pplan.oversize.length)warn.push({t:"Some boards are bigger than a 2440 × 1220 sheet and need joining over a batten.",bad:true});
+  const totes=walls.reduce((a,w)=>a+w.bays.reduce((x,b)=>x+b.items.reduce((y,it)=>y+it.boxes,0),0),0);
+  walls.forEach(w=>w.bays.forEach(b=>b.items.forEach(it=>{
+    if(it.kind==="shelf"&&it.boxes===0&&w.perShelf>0&&it.clear<spec.box.h+20&&spec.depth>=boxD+10&&!b.bench)
+      warn.push({t:`${w.name}: the shelf at ${Math.round(it.h/10)} cm has ${Math.round(it.clear/10)} cm of clearance, too low for a box. Fine for smaller items.`,dedupe:`${w.wi}-${it.h}`});
+  })));
+  const seen=new Set();const warnings=warn.filter(x=>{const k=x.dedupe||x.t;if(seen.has(k))return false;seen.add(k);return true;});
+  const topBox=Math.max(0,...walls.flatMap(w=>w.bays.flatMap(b=>b.items.filter(i=>i.boxes).map(i=>i.h+spec.box.h))));
+  if(topBox>1900)warnings.push({t:`The top boxes sit at about ${(topBox/1000).toFixed(2)} m, so keep a step stool handy and store light things up there.`});
+  return {spec,sec,walls,timber,panels,peg,fx,tplan,splan,pplan,totes,warnings};
+}
+function packTimber(pieces){
+  const maxS=STOCK[STOCK.length-1];
+  const tooLong=pieces.filter(p=>p.len>maxS);
+  const ok=pieces.filter(p=>p.len<=maxS).sort((a,b)=>b.len-a.len);
+  let best=null;
+  for(const S of STOCK){
+    const bins=[];
+    for(const p of ok){
+      const need=p.len+KERF;let bi=-1,br=Infinity;
+      bins.forEach((bn,i)=>{const r=bn.stock-bn.used-need;if(r>=-KERF&&r<br){br=r;bi=i;}});
+      if(bi>=0){bins[bi].used+=need;bins[bi].cuts.push(p);}
+      else{const st=p.len<=S?S:STOCK.find(x=>x>=p.len);bins.push({stock:st,used:need,cuts:[p]});}
+    }
+    const total=bins.reduce((a,x)=>a+x.stock,0);
+    if(!best||total<best.total||(total===best.total&&bins.length<best.bins.length))best={total,bins};
+  }
+  best=best||{total:0,bins:[]};
+  const cutLen=ok.reduce((a,p)=>a+p.len,0);
+  return {...best,tooLong,waste:best.total?1-cutLen/best.total:0};
+}
+function packSheets(items){
+  const list=items.map(it=>({...it,a:Math.max(it.w,it.h),c:Math.min(it.w,it.h)})).sort((x,y)=>y.c-x.c||y.a-x.a);
+  const sheets=[],oversize=[];
+  const opts=it=>{const o=[];if(it.a<=SHEET.w&&it.c<=SHEET.h)o.push({len:it.a,sh:it.c});if(it.a<=SHEET.h)o.push({len:it.c,sh:it.a});return o;};
+  for(const it of list){
+    const os=opts(it);if(!os.length){oversize.push(it);continue;}
+    let done=false;
+    for(const s of sheets){for(const st of s.strips){for(const o of os){if(o.sh<=st.h&&st.x+o.len<=SHEET.w){s.pcs.push({x:st.x,y:st.y,w:o.len,h:o.sh,name:it.name});st.x+=o.len+KERF;done=true;break;}}if(done)break;}if(done)break;}
+    if(!done){for(const s of sheets){const o=os.find(o=>s.usedH+o.sh<=SHEET.h);if(o){const st={y:s.usedH,h:o.sh,x:o.len+KERF};s.strips.push(st);s.usedH+=o.sh+KERF;s.pcs.push({x:0,y:st.y,w:o.len,h:o.sh,name:it.name});done=true;break;}}}
+    if(!done){const o=os[0];const s={strips:[{y:0,h:o.sh,x:o.len+KERF}],usedH:o.sh+KERF,pcs:[{x:0,y:0,w:o.len,h:o.sh,name:it.name}]};sheets.push(s);}
+  }
+  return {sheets,oversize};
+}
+
+/* ---------- Rendering ---------- */
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cm=mm=>`${Math.round(mm/10)} cm`, m2=mm=>`${(mm/1000).toFixed(2)} m`;
+let uidN=0;
+function elevationSVG(R,w){
+  const spec=R.spec,sec=R.sec,t=sec.h,railH=sec.h,uid=++uidN;
+  const VW=900,VH=450,ml=60,mr=20,mt=26,mb=70;
+  const s=Math.min((VW-ml-mr)/w.length,(VH-mt-mb)/spec.ceiling);
+  const X=mm=>ml+mm*s,Y=h=>VH-mb-h*s;
+  const thick=k=>(k==="bench"?2*PLY:PLY)+railH;
+  let o=`<svg viewBox="0 0 ${VW} ${VH}" class="draw" role="img" aria-label="Front view of ${esc(w.name)}"><defs><pattern id="hp${uid}" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9" class="hatchline"/></pattern></defs>`;
+  o+=`<rect x="${X(0)}" y="${Y(spec.ceiling)}" width="${w.length*s}" height="${spec.ceiling*s}" class="wallbg"/>`;
+  o+=`<line x1="${X(0)}" y1="${Y(spec.ceiling)}" x2="${X(w.length)}" y2="${Y(spec.ceiling)}" class="ceil"/>`;
+  o+=`<text x="${X(w.length)-4}" y="${Y(spec.ceiling)-7}" text-anchor="end" class="lbl">Ceiling ${cm(spec.ceiling)}</text>`;
+  if(w.start>0){o+=`<rect x="${X(0)}" y="${Y(spec.unitHeight)}" width="${w.start*s}" height="${spec.unitHeight*s}" fill="url(#hp${uid})" class="blocked"/>`;
+    if(w.start*s>60)o+=`<text x="${X(w.start/2)}" y="${Y(spec.unitHeight/2)}" text-anchor="middle" class="lbl strong">Corner</text>`;}
+  if(w.n&&w.spare>=150){const sx=(spec.layout==="L"&&w.wi===0)?0:w.offset+w.used;
+    o+=`<rect x="${X(sx)}" y="${Y(spec.unitHeight)}" width="${w.spare*s}" height="${spec.unitHeight*s}" fill="url(#hp${uid})" opacity=".55"/>`;
+    if(w.spare*s>70)o+=`<text x="${X(sx+w.spare/2)}" y="${Y(spec.unitHeight/2)}" text-anchor="middle" class="lbl">Free ${m2(w.spare)}</text>`;}
+  for(let p=0;p<=w.n;p++){const x=w.offset+p*(w.W+t);o+=`<rect x="${X(x)}" y="${Y(spec.unitHeight)}" width="${t*s}" height="${spec.unitHeight*s}" class="upr"/>`;}
+  const heights=new Set();
+  w.bays.forEach(bay=>{
+    const x0=bay.x0;
+    if(bay.bench){
+      const up=bay.items.find(it=>it.kind==="shelf"&&it.h>spec.workbench.height);
+      const top=Math.min(up?up.h-thick("shelf"):spec.workbench.height+700,spec.unitHeight);
+      if(top-spec.workbench.height>=200)o+=`<rect x="${X(x0)}" y="${Y(top)}" width="${bay.W*s}" height="${(top-spec.workbench.height)*s}" class="peg"/>`;
+      if(up){const ly=Y(up.h-thick("shelf"));o+=`<rect x="${X(x0+bay.W*.1)}" y="${ly+1}" width="${bay.W*.8*s}" height="4" rx="2" class="lid"/>`;}
+    }
+    bay.items.forEach(it=>{
+      heights.add(it.h);
+      if(it.boxes){
+        const tw=it.boxes*w.f+(it.boxes-1)*GAP, pad=(bay.W-tw)/2, bh=spec.box.h, lidH=Math.min(bh*.14,60);
+        for(let j=0;j<it.boxes;j++){const bx=x0+pad+j*(w.f+GAP);
+          o+=`<rect x="${X(bx)}" y="${Y(it.h+bh)}" width="${w.f*s}" height="${bh*s}" rx="2" class="tote"/><rect x="${X(bx)}" y="${Y(it.h+bh)}" width="${w.f*s}" height="${Math.max(3,lidH*s)}" rx="2" class="lid"/>`;}
+      }
+    });
+    bay.items.forEach(it=>{
+      const th=thick(it.kind);
+      o+=`<rect x="${X(x0-t)}" y="${Y(it.h)}" width="${(bay.W+2*t)*s}" height="${th*s}" class="${it.kind==="bench"?"benchtop":"band"}"/>`;
+    });
+    const cnt=bay.items.reduce((a,it)=>a+it.boxes,0);
+    o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+20}" text-anchor="middle" class="lbl strong">${bay.bench?"Workbench":cnt+" box"+(cnt===1?"":"es")}</text>`;
+    o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+37}" text-anchor="middle" class="lbl">${cm(bay.W)} clear</text>`;
+  });
+  o+=`<line x1="${X(0)-8}" y1="${Y(0)}" x2="${X(w.length)+8}" y2="${Y(0)}" class="floor"/>`;
+  const dy=Y(0)+56;
+  o+=`<line x1="${X(0)}" y1="${dy}" x2="${X(w.length)}" y2="${dy}" class="dim"/><line x1="${X(0)}" y1="${dy-5}" x2="${X(0)}" y2="${dy+5}" class="dim"/><line x1="${X(w.length)}" y1="${dy-5}" x2="${X(w.length)}" y2="${dy+5}" class="dim"/>`;
+  o+=`<rect x="${X(w.length/2)-90}" y="${dy-9}" width="180" height="18" class="wallbg"/><text x="${X(w.length/2)}" y="${dy+4}" text-anchor="middle" class="lbl strong">${esc(w.name)} ${m2(w.length)}</text>`;
+  const hs=[...heights].sort((a,b)=>a-b);let last=-1e9;
+  o+=`<text x="${X(0)-8}" y="${Y(spec.ceiling)+4}" text-anchor="end" class="lbl">cm</text>`;
+  hs.forEach(h=>{if((h-last)*s<14)return;last=h;o+=`<text x="${X(0)-8}" y="${Y(h)+4}" text-anchor="end" class="lbl">${Math.round(h/10)}</text>`;});
+  if(!w.n)o+=`<text x="${X(w.length/2)}" y="${Y(spec.ceiling/2)}" text-anchor="middle" class="lbl strong">No room for a bay on this wall</text>`;
+  return o+"</svg>";
+}
+function planSVG(R){
+  const spec=R.spec,t=R.sec.h,D=spec.depth;
+  if(spec.layout!=="L"){
+    const w=R.walls[0],VW=900,VH=260,ml=40;
+    const s=Math.min((VW-80)/w.length,(VH-110)/D);const X=mm=>ml+mm*s,y0=40;
+    let o=`<svg viewBox="0 0 ${VW} ${VH}" class="draw" role="img" aria-label="Plan view from above">`;
+    o+=`<line x1="${X(0)}" y1="${y0}" x2="${X(w.length)}" y2="${y0}" class="wall"/>`;
+    o+=`<text x="${X(w.length/2)}" y="${y0-12}" text-anchor="middle" class="lbl strong">${esc(w.name)} ${m2(w.length)}</text>`;
+    o+=bayRectsH(w,X,y0+3,D*s,t,s);
+    o+=`<text x="${X(0)}" y="${y0+3+D*s+24}" class="lbl">Depth ${cm(D)} from the wall</text>`;
+    return o+"</svg>";
+  }
+  const a=R.walls[0],b=R.walls[1],VW=900,VH=470,ml=40,mt=44;
+  const s=Math.min(700/a.length,(VH-mt-40)/b.length);
+  const X=mm=>ml+mm*s,Yb=mm=>mt+mm*s;
+  let o=`<svg viewBox="0 0 ${VW} ${VH}" class="draw" role="img" aria-label="Plan view of the corner from above">`;
+  o+=`<line x1="${X(0)}" y1="${mt}" x2="${X(a.length)}" y2="${mt}" class="wall"/><line x1="${X(a.length)}" y1="${mt}" x2="${X(a.length)}" y2="${Yb(b.length)}" class="wall"/>`;
+  o+=`<text x="${X(a.length/2)}" y="${mt-14}" text-anchor="middle" class="lbl strong">${esc(a.name)} ${m2(a.length)}</text>`;
+  o+=`<text x="${X(a.length)+12}" y="${Yb(b.length/2)}" class="lbl strong">${esc(b.name)}</text><text x="${X(a.length)+12}" y="${Yb(b.length/2)+17}" class="lbl">${m2(b.length)}</text>`;
+  o+=bayRectsH(a,X,mt+3,D*s-3,t,s);
+  if(b.n){
+    const x=X(a.length)-3-D*s+3, wpx=D*s-3;
+    for(let p=0;p<=b.n;p++){const yy=b.offset+p*(b.W+t);o+=`<rect x="${x}" y="${Yb(yy)}" width="${wpx}" height="${t*s}" class="upr"/>`;}
+    b.bays.forEach(bay=>{o+=`<rect x="${x}" y="${Yb(bay.x0)}" width="${wpx}" height="${bay.W*s}" class="unit${bay.bench?" bench":""}"/>`;
+      if(bay.bench&&bay.W*s>30)o+=`<text x="${x+wpx/2}" y="${Yb(bay.x0+bay.W/2)+4}" text-anchor="middle" class="lbl strong">Bench</text>`;});
+  }
+  o+=`<text x="${X(0)}" y="${VH-12}" class="lbl">The left run goes into the corner. The right run butts against its side. Depth ${cm(D)}.</text>`;
+  return o+"</svg>";
+}
+function bayRectsH(w,X,y,h,t,s){
+  let o="";if(!w.n)return o;
+  for(let p=0;p<=w.n;p++){const x=w.offset+p*(w.W+t);o+=`<rect x="${X(x)}" y="${y}" width="${t*s}" height="${h}" class="upr"/>`;}
+  w.bays.forEach(bay=>{o+=`<rect x="${X(bay.x0)}" y="${y}" width="${bay.W*s}" height="${h}" class="unit${bay.bench?" bench":""}"/>`;
+    if(bay.W*s>50)o+=`<text x="${X(bay.x0+bay.W/2)}" y="${y+h/2+4}" text-anchor="middle" class="lbl strong">${bay.bench?"Bench":cm(bay.W)}</text>`;});
+  return o;
+}
+function sheetSVG(sheet){
+  let o=`<svg viewBox="-20 -20 ${SHEET.w+40} ${SHEET.h+40}" role="img" aria-label="Sheet cutting layout"><rect x="0" y="0" width="${SHEET.w}" height="${SHEET.h}" class="sh-bg"/>`;
+  sheet.pcs.forEach(p=>{o+=`<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" class="sh-pc"/>`;
+    if(p.w>800&&p.h>200)o+=`<text x="${p.x+p.w/2}" y="${p.y+p.h/2+40}" text-anchor="middle" class="sh-t">${p.w} × ${p.h}</text>`;});
+  return o+"</svg>";
+}
+function groupBins(bins){
+  const m=new Map();bins.forEach(b=>{const k=b.stock+"|"+b.cuts.map(c=>c.len).join(",");const g=m.get(k);if(g)g.n++;else m.set(k,{bin:b,n:1});});return [...m.values()];
+}
+function groupSheets(sheets){
+  const m=new Map();sheets.forEach(s=>{const k=s.pcs.map(p=>`${p.x},${p.y},${p.w},${p.h}`).join(";");const g=m.get(k);if(g)g.n++;else m.set(k,{sheet:s,n:1});});return [...m.values()];
+}
+function shopRows(R){
+  const rows=[],sec=R.sec,fx=R.fx;
+  const by={};R.tplan.bins.forEach(b=>by[b.stock]=(by[b.stock]||0)+1);
+  Object.keys(by).sort((a,b)=>a-b).forEach(k=>rows.push([`${sec.label}, ${(k/1000).toFixed(1)} m lengths`,by[k],"Frame, rails, cross-members, braces"]));
+  if(R.splan.sheets.length)rows.push([`${SHEETS[R.spec.sheet]}, 2440 × 1220 mm`,R.splan.sheets.length,"Shelf boards and bench top"]);
+  if(R.pplan.sheets.length)rows.push(["Pegboard or 9–12 mm ply, 2440 × 1220 mm (check size)",R.pplan.sheets.length,"Back of the bench"]);
+  const up=(n,st)=>Math.ceil(n*1.1/st)*st;
+  if(fx.s80)rows.push(["Wood screws 5 × 80 mm",up(fx.s80,50),"Frame joints"]);
+  if(fx.s40)rows.push(["Wood screws 4 × 40 mm",up(fx.s40,50),"Boards to rails"]);
+  if(fx.s25)rows.push(["Wood screws 4 × 25 mm",up(fx.s25,50),"Pegboard"]);
+  if(fx.wall)rows.push(["Wall fixings suited to your wall (e.g. frame fixings for masonry)",fx.wall+2,"Tying frames to the wall"]);
+  if(fx.packers)rows.push(["Plastic packers or DPC strip",fx.packers,"Under each upright"]);
+  if(fx.glue)rows.push(["Wood glue (PVA)",1,"Laminating the bench top"]);
+  if(fx.leds)rows.push(["Linkable LED battens, about 1.2 m, plug-in (optional)",fx.leds,"Under the shelf above the bench"]);
+  return rows;
+}
+function cutRows(R){
+  const m=new Map();
+  R.timber.forEach(p=>{const k=`${p.name}|${p.len}`;const g=m.get(k);if(g)g.qty+=p.qty;else m.set(k,{name:p.name,size:`${p.len} mm`,qty:p.qty,mat:R.sec.label,sort:p.len});});
+  const t=[...m.values()].sort((a,b)=>b.sort-a.sort);
+  const n=new Map();
+  [...R.panels.map(p=>({...p,mat:SHEETS[R.spec.sheet]})),...R.peg.map(p=>({...p,mat:"Pegboard / thin ply"}))].forEach(p=>{const k=`${p.name}|${p.w}|${p.h}`;const g=n.get(k);if(g)g.qty+=p.qty;else n.set(k,{name:p.name,size:`${p.w} × ${p.h} mm`,qty:p.qty,mat:p.mat});});
+  return [...t,...n.values()];
+}
+function stepsFor(R){
+  const s=R.spec,sec=R.sec,t=sec.h;
+  const out=[
+    `Measure one of your boxes (lid on) and the wall again. This plan assumes ${cm(s.box.l)} × ${cm(s.box.w)} × ${cm(s.box.h)}.`,
+    `Cut the uprights to ${s.unitHeight} mm and the cross-members to ${s.depth-2*sec.b} mm, then build each end frame flat on the floor: two uprights with a cross-member at every shelf height.`,
+    `Stand the frames on packers, ${t} mm faces towards you, with the back uprights against the wall.`,
+    `Screw the bottom and top rails on first (on edge, along the front and back faces). Check the run is level and square by measuring both diagonals, then add the remaining rails. Rails butt-join over the centre of shared uprights with three 5 × 80 mm screws each end.`,
+    `Fit the mid battens between the rails under each shelf, then brace the back of each storage bay.`,
+    `Fix every frame to the wall near the top before loading anything.`,
+    `Drop the boards in between the uprights and screw them to the rails.`
+  ];
+  if(s.workbench.enabled)out.push(`Glue and screw the two bench top layers, fit the pegboard, then fix the LED battens under the shelf above. Use plug-in lights, and get an electrician for any hardwired work.`);
+  return out;
+}
+
+/* ---------- UI ---------- */
+const $=id=>document.getElementById(id);
+let spec=(()=>{try{const s=localStorage.getItem("trp-spec");if(s)return sanitize(JSON.parse(s));}catch(e){}return sanitize(DEFAULT_SPEC);})();
+let view=0, R=null;
+function save(){try{localStorage.setItem("trp-spec",JSON.stringify(spec));}catch(e){}}
+function render(){
+  R=computeAll(spec); spec=R.spec; save();
+  const views=[...R.walls.map(w=>w.name+" front"),"Plan"];
+  if(view>=views.length)view=0;
+  $("viewbar").innerHTML=views.map((v,i)=>`<button class="vbtn" aria-pressed="${i===view}" data-v="${i}">${esc(v)}</button>`).join("");
+  $("viewbar").querySelectorAll("button").forEach(b=>b.onclick=()=>{view=+b.dataset.v;render();});
+  const bays=R.walls.reduce((a,w)=>a+w.n,0), runs=R.walls.reduce((a,w)=>a+w.used,0);
+  $("stats").innerHTML=[[R.totes,"box spaces"],[bays,"bays"],[m2(runs),"of shelving"],[cm(spec.depth),"deep"]].map(([b,l])=>`<div class="stat"><b>${b}</b><span>${l}</span></div>`).join("");
+  $("drawing").innerHTML=view<R.walls.length?elevationSVG(R,R.walls[view]):planSVG(R);
+  $("warns").innerHTML=R.warnings.map(w=>`<li class="${w.bad?"bad":""}">${esc(w.t)}</li>`).join("");
+  $("shop").innerHTML=`<table class="tbl"><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th>For</th></tr></thead><tbody>${shopRows(R).map(r=>`<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td>${esc(r[2])}</td></tr>`).join("")}</tbody></table>`;
+  $("cuts").innerHTML=`<table class="tbl"><thead><tr><th>Part</th><th>Size</th><th style="text-align:right">Qty</th><th>Material</th></tr></thead><tbody>${cutRows(R).map(r=>`<tr><td>${esc(r.name)}</td><td class="n" style="text-align:left">${esc(r.size)}</td><td class="n">${r.qty}</td><td>${esc(r.mat)}</td></tr>`).join("")}</tbody></table>`;
+  $("bars").innerHTML=groupBins(R.tplan.bins).map(g=>`<div class="barrow"><span>${(g.bin.stock/1000).toFixed(1)} m × ${g.n}</span><div class="bar" title="Offcut ${Math.max(0,g.bin.stock-g.bin.used+KERF)} mm">${g.bin.cuts.map(c=>`<div class="cut" style="width:${c.len/g.bin.stock*100}%" title="${esc(c.name)} ${c.len} mm">${c.len/g.bin.stock>.12?c.len:""}</div>`).join("")}</div></div>`).join("")+`<p class="fine">About ${Math.round(R.tplan.waste*100)}% offcut waste, allowing ${KERF} mm per saw cut.</p>`;
+  $("sheets").innerHTML=[...groupSheets(R.splan.sheets).map(g=>[g,SHEETS[spec.sheet]]),...groupSheets(R.pplan.sheets).map(g=>[g,"Pegboard"])].map(([g,l])=>`<figure>${sheetSVG(g.sheet)}<figcaption>${esc(l)} × ${g.n}</figcaption></figure>`).join("")||`<p class="fine">No sheets needed.</p>`;
+  $("steps").innerHTML=stepsFor(R).map(s=>`<li>${esc(s)}</li>`).join("");
+}
+
+/* form sync */
+const F=id=>$("f-"+id), toCm=mm=>Math.round(mm)/10, toMm=v=>Math.round(parseFloat(v)*10);
+function syncForm(){
+  F("layout").value=spec.layout; F("wa").value=toCm(spec.walls[0].length); F("wb").value=toCm(spec.walls[1].length);
+  $("lab-wa").textContent=spec.layout==="L"?"Left wall (cm)":"Wall length (cm)";
+  $("wrap-wb").hidden=spec.layout!=="L"; $("wrap-bwall").hidden=spec.layout!=="L";
+  F("ceil").value=toCm(spec.ceiling); F("uh").value=toCm(spec.unitHeight); F("depth").value=toCm(spec.depth);
+  F("bl").value=toCm(spec.box.l); F("bw").value=toCm(spec.box.w); F("bh").value=toCm(spec.box.h);
+  F("ori").value=spec.box.orientation; F("bpb").value=String(spec.boxesPerBay);
+  F("fill").checked=spec.fillWall; F("bay").value=spec.bayClear?toCm(spec.bayClear):"";
+  F("lm").value=spec.levelsMode;
+  const lv=spec.levelsMode==="auto"?autoLevels(spec,SECTIONS[spec.frame]):spec.levels;
+  F("levels").value=lv.map(toCm).join(", "); F("levels").disabled=spec.levelsMode==="auto";
+  F("bench").checked=spec.workbench.enabled; F("bwall").value=String(spec.workbench.wall); F("bat").value=spec.workbench.at;
+  F("bhgt").value=toCm(spec.workbench.height); F("upper").checked=spec.workbench.upperShelf;
+  F("frame").value=spec.frame; F("sheet").value=spec.sheet;
+}
+function readForm(){
+  const layout=F("layout").value, prevLayout=spec.layout;
+  const names=layout==="L"?["Left wall","Right wall"]:["Wall","Right wall"];
+  const keepName=(i)=>layout===prevLayout?spec.walls[i].name:names[i];
+  const lm=F("lm").value;
+  let levels=spec.levels;
+  if(lm==="custom"){
+    const parsed=F("levels").value.split(/[,;\s]+/).map(parseFloat).filter(v=>isFinite(v)).map(v=>Math.round(v*10));
+    levels=parsed.length?parsed:autoLevels(spec,SECTIONS[spec.frame]);
+  }
+  return {layout,walls:[{name:keepName(0),length:toMm(F("wa").value)},{name:keepName(1),length:toMm(F("wb").value)}],
+    ceiling:toMm(F("ceil").value),unitHeight:toMm(F("uh").value),depth:toMm(F("depth").value),
+    box:{l:toMm(F("bl").value),w:toMm(F("bw").value),h:toMm(F("bh").value),orientation:F("ori").value},
+    boxesPerBay:F("bpb").value==="auto"?"auto":+F("bpb").value,bayClear:F("bay").value?toMm(F("bay").value):null,fillWall:F("fill").checked,
+    levelsMode:lm,levels,
+    workbench:{enabled:F("bench").checked,wall:+F("bwall").value,at:F("bat").value,height:toMm(F("bhgt").value),upperShelf:F("upper").checked},
+    frame:F("frame").value,sheet:F("sheet").value};
+}
+$("form").addEventListener("change",()=>{spec=sanitize(readForm());syncForm();render();});
+$("reset").onclick=()=>{spec=sanitize(DEFAULT_SPEC);syncForm();render();};
+
+/* tabs */
+function tab(which){const chat=which==="chat";$("tab-chat").setAttribute("aria-selected",chat);$("tab-form").setAttribute("aria-selected",!chat);$("pane-chat").hidden=!chat;$("pane-form").hidden=chat;}
+$("tab-chat").onclick=()=>tab("chat"); $("tab-form").onclick=()=>tab("form");
+
+/* chat */
+let sample=null,busy=false,ctl=null;const turns=[];
+function addMsg(role,text){const d=document.createElement("div");d.className="msg "+role;d.textContent=text;$("chatlog").appendChild(d);$("chatlog").scrollTop=$("chatlog").scrollHeight;return d;}
+addMsg("ai","Tell me about your space: wall lengths, ceiling height, whether it's a corner, and anything special like a taller bottom section or a workbench. I'll redraw the plan as we go. You can also fine-tune every number in Adjust.");
+function summary(){
+  return R.walls.map(w=>`${w.name}: ${w.n} bays, ${w.W} mm clear each, shelf heights ${[...new Set(w.bays.flatMap(b=>b.items.map(i=>i.h)))].sort((a,b)=>a-b).join("/")} mm`).join("; ")+`. Total box spaces: ${R.totes}. Notes: ${R.warnings.map(w=>w.t).join(" ")||"none"}`;
+}
+function buildPrompt(msg){
+  const railStack=PLY+SECTIONS[spec.frame].h;
+  const hist=turns.slice(-8,-1).map(t=>`${t.role==="user"?"User":"Assistant"}: ${t.content}`).join("\n");
+  return `You are the design assistant inside a garage shelving planner. The user describes what they want and you update a JSON design spec. A separate engine does all geometry, fitting and cut lists, so never calculate quantities yourself.
+
+SPEC FIELDS (all lengths in millimetres):
+- layout: "straight" (one wall) or "L" (corner). For "L", walls[0] is the left wall, whose unit runs into the corner; walls[1] is the right wall, whose unit butts against the side of the first.
+- walls: [{name, length}, {name, length}]. Always keep two entries; walls[1] is only used for "L". Default names: "Wall" for straight, "Left wall"/"Right wall" for L.
+- ceiling: floor to ceiling, or to the lowest obstruction such as a door header.
+- unitHeight: upright height, below the ceiling (usually ceiling minus about 100).
+- depth: shelf depth.
+- box: {l, w, h, orientation}. Outer size of the user's storage box with lid. orientation "long" = long side faces out, "short" = short end faces out.
+- boxesPerBay: "auto" or 1 to 4.
+- bayClear: null for automatic, or a fixed clear width between uprights.
+- fillWall: true stretches bays to use the whole wall.
+- levelsMode: "auto" (spaced to fit the boxes) or "custom" (use levels).
+- levels: ascending shelf top heights above the floor, e.g. [120, 1300, 1800]. The lowest possible is about ${railStack+13}. Each shelf's structure is ${railStack} mm thick below its top surface.
+- workbench: {enabled, wall (0 or 1), at ("start" = left end, "middle", "end" = right end), height (bench surface), upperShelf (a shelf with lights above the bench)}.
+- frame: "38x89" (CLS) or "47x100" (C24, allows wider bays).
+- sheet: "ply18" or "osb18".
+
+RULES:
+- Change only what the user asked for; keep everything else exactly as it is.
+- Convert metres and centimetres to millimetres.
+- If the user says the bottom section should be X tall, keep a floor-level shelf at about ${railStack+13} and set the next shelf top at about ${railStack+13} + X + ${railStack}, and set levelsMode to "custom". If they give shelf heights directly, use them as shelf top heights.
+- If they name a box you don't know the size of, don't guess: keep the current box and ask them to measure it.
+- If something can't work, make the closest valid change and say so. If you need more information, ask one short question and return the spec unchanged.
+- Your reply is 1 to 3 plain sentences: what you changed and any assumption you made.
+
+CURRENT SPEC:
+${JSON.stringify(spec)}
+
+WHAT THE ENGINE CURRENTLY PRODUCES:
+${summary()}
+${hist?`\nRECENT CONVERSATION:\n${hist}\n`:""}
+USER: ${msg}
+
+Reply with only a JSON object: {"reply": "...", "spec": { ...the complete updated spec... }}`;
+}
+const errCopy={not_granted:"Chat needs your permission to use Claude. You can still adjust everything in Adjust.",rate_limited:"Too many requests at once. Wait a moment and send again.",invalid_json:"I couldn't read that answer. Try rephrasing, or ask for one change at a time.",prompt_too_large:"The conversation got too long. Reload the page to start a fresh chat; your design is kept.",cancelled:"Stopped.",refused:"I can't help with that one. Try describing your shelving instead.",bad_pass:"That passcode didn't work. Send again to re-enter it.",server_config:"The server is missing its API key. Add ANTHROPIC_API_KEY in Vercel and redeploy."};
+async function send(text){
+  const msg=(text??$("msg").value).trim(); if(!msg||busy||!sample)return;
+  $("msg").value=""; addMsg("me",msg); turns.push({role:"user",content:msg});
+  const bubble=addMsg("ai","Thinking…"); busy=true; $("send").disabled=true; $("stop").hidden=false;
+  ctl=new AbortController();
+  try{
+    const res=await sample.json(buildPrompt(msg),{signal:ctl.signal,cache:false});
+    if(!res||typeof res!=="object")throw{code:"invalid_json"};
+    if(res.spec&&typeof res.spec==="object"){spec=sanitize(res.spec);syncForm();render();}
+    const reply=String(res.reply||"Updated the plan.");
+    bubble.textContent=reply; turns.push({role:"assistant",content:reply});
+  }catch(e){
+    const code=e&&e.code; bubble.textContent=errCopy[code]||"Something went wrong reaching Claude. Try again in a moment."; if(code!=="cancelled")bubble.classList.add("err");
+    turns.pop();
+    if(code==="not_granted"||code==="sampling_disabled"||code==="capability_disabled"){sample=null;$("chatstatus").textContent="Chat is off for this view. Use Adjust to set up your shelves.";}
+  }finally{busy=false;$("send").disabled=!sample;$("stop").hidden=true;}
+}
+$("send").onclick=()=>send();
+$("stop").onclick=()=>ctl&&ctl.abort();
+$("msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
+$("chips").querySelectorAll(".chip").forEach(c=>c.onclick=()=>send(c.textContent));
+
+/* standalone (Vercel) adapters */
+function parseLoose(t){t=String(t||"");try{return JSON.parse(t);}catch(e){}
+  const m=t.match(/```(?:json)?\s*([\s\S]*?)```/);if(m){try{return JSON.parse(m[1]);}catch(e){}}
+  const a=t.indexOf("{"),b=t.lastIndexOf("}");if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1));}catch(e){}}
+  throw{code:"invalid_json"};}
+function remoteSample(){
+  return{json:async(prompt,opts={})=>{
+    let code="";try{code=localStorage.getItem("trp-pass")||"";}catch(e){}
+    const go=()=>fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json","x-app-passcode":code},body:JSON.stringify({prompt}),signal:opts.signal});
+    const call=async()=>{try{return await go();}catch(e){throw{code:e&&e.name==="AbortError"?"cancelled":"upstream_error"};}};
+    let r=await call();
+    if(r.status===401){code=window.prompt("Enter your planner passcode")||"";try{localStorage.setItem("trp-pass",code);}catch(e){}
+      r=await call();if(r.status===401){try{localStorage.removeItem("trp-pass");}catch(e){}throw{code:"bad_pass"};}}
+    if(r.status===429)throw{code:"rate_limited"};
+    if(r.status===500)throw{code:"server_config"};
+    if(!r.ok)throw{code:"upstream_error"};
+    const j=await r.json();return parseLoose(j.text);
+  }};
+}
+function blobSave(filename,data,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data],{type}));a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);}
+
+/* downloads */
+let downloads=null;
+function csv(){
+  const q=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const lines=[["Section","Item","Size","Qty","Notes"].map(q).join(",")];
+  shopRows(R).forEach(r=>lines.push(["Shopping",r[0],"",r[1],r[2]].map(q).join(",")));
+  cutRows(R).forEach(r=>lines.push(["Cut list",r.name,r.size,r.qty,r.mat].map(q).join(",")));
+  return lines.join("\n");
+}
+function reportHTML(){
+  const css=[...document.querySelectorAll("style")].map(s=>s.textContent).join("\n");
+  const els=R.walls.map(w=>`<h3>${esc(w.name)}</h3>${elevationSVG(R,w)}`).join("")+`<h3>Plan</h3>${planSVG(R)}`;
+  return `<!DOCTYPE html><html lang="en" data-theme="light"><head><meta charset="utf-8"><title>Tote rack plan</title><style>${css}
+body{background:#fff}.wrap{max-width:1000px;margin:0 auto;padding:24px}svg.draw{min-width:0}h2{margin:24px 0 8px}@media print{.pb{page-break-before:always}}</style></head><body><div class="wrap">
+<h1 style="font-size:32px">Tote rack plan</h1><p class="fine">${R.totes} box spaces, ${R.walls.reduce((a,w)=>a+w.n,0)} bays, boxes ${cm(spec.box.l)} × ${cm(spec.box.w)} × ${cm(spec.box.h)}, shelves ${cm(spec.depth)} deep, ${esc(R.sec.label)} frame with ${esc(SHEETS[spec.sheet])}.</p>
+<h2>Drawings</h2>${els}
+${R.warnings.length?`<h2>Notes</h2><ul class="warns" style="padding:0">${R.warnings.map(w=>`<li class="${w.bad?"bad":""}">${esc(w.t)}</li>`).join("")}</ul>`:""}
+<h2 class="pb">Shopping list</h2>${$("shop").innerHTML}<h2>Cut list</h2>${$("cuts").innerHTML}
+<h2>Cutting plan</h2><div class="bars">${$("bars").innerHTML}</div><div class="sheets" style="margin-top:12px">${$("sheets").innerHTML}</div>
+<h2>Build order</h2><ol class="steps">${$("steps").innerHTML}</ol>
+<p class="fine" style="margin-top:16px">Sizing uses conservative rules of thumb, not an engineer's calculation. Measure before cutting, fix every frame to the wall, and check fixings suit your wall type.</p></div></body></html>`;
+}
+async function doSave(filename,data){
+  if(!downloads){blobSave(filename,data,filename.endsWith(".csv")?"text/csv":"text/html");$("dlstatus").textContent="Downloaded.";return;}
+  $("dlstatus").textContent="";
+  try{const r=await downloads.save({filename,data});$("dlstatus").textContent=r&&r.status==="saved"?"Saved.":"Sent.";}
+  catch(e){const c=e&&e.code;$("dlstatus").textContent=c==="unavailable"?"Downloads aren't available here.":(c==="cancelled"||c==="declined"?"":"The file wasn't saved.");if(c==="unavailable"){$("dl-plan").hidden=true;$("dl-csv").hidden=true;}}
+}
+$("dl-plan").onclick=()=>doSave("tote-rack-plan.html",reportHTML());
+$("dl-csv").onclick=()=>doSave("tote-rack-cut-list.csv",csv());
+$("copy-csv").onclick=async()=>{try{await navigator.clipboard.writeText(csv());$("dlstatus").textContent="Cut list copied.";}catch(e){$("dlstatus").textContent="Copying isn't allowed here.";}};
+
+/* boot */
+syncForm(); render();
+(async()=>{
+  if(!window.claude||typeof window.claude.use!=="function"){sample=remoteSample();$("send").disabled=false;$("chatstatus").textContent="Press Enter to send. Chat runs through your own Anthropic API key.";return;}
+  try{sample=await window.claude.use("sample");}catch(e){sample=null;}
+  $("send").disabled=!sample;
+  $("chatstatus").textContent=sample?"Each message uses your Claude account. Press Enter to send.":"Chat isn't available here. Use Adjust to set up your shelves.";
+})();
+(async()=>{
+  if(!window.claude||typeof window.claude.use!=="function")return;
+  try{downloads=await window.claude.use("downloads");}catch(e){downloads=null;}
+})();
+</script>
+</body>
+</html>
