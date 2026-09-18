@@ -103,6 +103,30 @@ svg.draw{width:100%;height:auto;display:block;min-width:560px}
 .unit.bench{fill:var(--bench);fill-opacity:.7}
 .unit.tall{fill:var(--lid);fill-opacity:.35}
 .ladder{stroke:var(--muted);stroke-width:2;stroke-linecap:round}
+.overline{stroke:var(--danger);stroke-width:2;opacity:.45}
+.over{stroke:var(--danger);stroke-dasharray:5 4;fill-opacity:1}
+.lbl.danger{fill:var(--danger);font-weight:500}
+svg.inter{touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.hit{fill:transparent;cursor:grab}
+.hit:hover{fill:var(--lid);fill-opacity:.08}
+.dragging .hit{cursor:grabbing}
+.handle{fill:transparent;cursor:ew-resize}
+.grip{fill:var(--text);opacity:.35;pointer-events:none}
+.grip.on{opacity:.8}
+.selbox{fill:none;stroke:var(--lid);stroke-width:3}
+.pv{fill:var(--lid);fill-opacity:.18;stroke:var(--lid);stroke-width:2;stroke-dasharray:6 4}
+.pvline{stroke:var(--lid);stroke-width:4}
+.pvlbl{fill:var(--text);font-family:var(--font-body);font-size:14px;font-weight:500}
+.pvbg{fill:var(--surface);stroke:var(--lid)}
+.baybar{padding:0 16px 14px;display:flex;flex-direction:column;gap:10px}
+.baybar .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.baybar .note{font-size:14px;color:var(--muted)}
+.baybar .note.bad{color:var(--danger)}
+.baybar .sel{border:1px solid var(--line);border-left:4px solid var(--lid);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.baybar input[type=number]{width:84px;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text)}
+.baybar select{padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text)}
+.manual{background:var(--note-bg);border-left:4px solid var(--lid);padding:8px 12px;font-size:15px}
+.stat.bad b{color:var(--danger)}
 .warns{margin:0;padding:0 16px 14px;list-style:none;display:flex;flex-direction:column;gap:6px}
 .warns li{background:var(--note-bg);border-left:4px solid var(--lid);padding:8px 12px;font-size:15px;border-radius:0}
 .warns li.bad{background:var(--danger-bg);border-left-color:var(--danger)}
@@ -225,6 +249,7 @@ ol.steps li{margin:4px 0;max-width:75ch}
       <div class="viewbar" id="viewbar"></div>
       <div class="stats" id="stats"></div>
       <div class="drawwrap" id="drawing"></div>
+      <div class="baybar" id="baybar"></div>
       <ul class="warns" id="warns"></ul>
     </section>
     <section class="panel" aria-label="Materials and cut list">
@@ -267,6 +292,7 @@ const DEFAULT_SPEC={
   levelsMode:"auto", levels:[120,660,1200,1740],
   workbench:{enabled:true,wall:0,at:"end",height:920,upperShelf:true},
   tallBays:[],
+  manual:[null,null],
   frame:"38x89", sheet:"ply18"
 };
 function num(v,a,b,d){v=Number(v);if(!isFinite(v))return d;return Math.min(b,Math.max(a,v));}
@@ -297,6 +323,10 @@ function sanitize(s){
     wall:(o.layout==="L"&&Number(x.wall)===1)?1:0,
     at:["start","middle","end"].includes(x.at)?x.at:"start",
     width:Math.round(num(x.width,150,1200,400)),topShelf:x.topShelf!==false};});
+  const mn=Array.isArray(s.manual)?s.manual:[];
+  o.manual=[0,1].map(i=>{const a=mn[i];if(!Array.isArray(a)||!a.length||(i===1&&o.layout!=="L"))return null;
+    return a.slice(0,12).map(x=>{x=x||{};const type=["storage","bench","tall"].includes(x.type)?x.type:"storage";
+      return{type,width:Math.round(num(x.width,150,3000,type==="tall"?400:1000)),topShelf:x.topShelf!==false};});});
   o.frame=SECTIONS[s.frame]?s.frame:"38x89";
   o.sheet=s.sheet==="osb18"?"osb18":"ply18";
   return o;
@@ -319,76 +349,79 @@ function computeWall(spec,wi,warn){
   const start=(isL&&wi===1)?spec.depth:0, L=wall.length-start;
   const long=spec.box.orientation==="long";
   const f=long?spec.box.l:spec.box.w, boxD=long?spec.box.w:spec.box.l;
-  const base={wi,name:wall.name,length:wall.length,start,L,bays:[],n:0,W:0,used:0,spare:L,offset:start,t,f,boxD,perShelf:0};
-  const talls=spec.tallBays.filter(x=>x.wall===wi);
-  const tallUse=talls.reduce((a,x)=>a+x.width+t,0);
-  if(talls.length&&L<tallUse+t){warn.push({t:`The tall bays don't fit on ${wall.name}. Make them narrower or move one to another wall.`,bad:true});return base;}
-  const Ln=L-tallUse;
+  const base={wi,name:wall.name,length:wall.length,start,L,bays:[],n:0,W:0,used:0,spare:L,offset:start,t,f,boxD,perShelf:0,manual:false};
   const pb=Wb=>Math.max(0,Math.floor((Wb-GAP)/(f+GAP)));
-  let k=spec.boxesPerBay;
-  if(k==="auto"){k=1;for(let c=3;c>=1;c--){if(c*f+(c+1)*GAP<=sec.maxSpan){k=c;break;}}}
-  let W0=spec.bayClear||(k*f+(k+1)*GAP);
-  if(W0>sec.maxSpan){warn.push({t:`${k} boxes side by side needs ${Math.round(W0/10)} cm between uprights, more than the ${Math.round(sec.maxSpan/10)} cm limit for ${sec.label} rails, so bays were narrowed.`,bad:true});W0=sec.maxSpan;}
-  let n=Math.floor((Ln-t)/(W0+t)),W=0,extraW=0;
-  if(n<1){
-    if(Ln-2*t>=300){n=1;W=Math.min(Ln-2*t,sec.maxSpan);}
-    else if(talls.length)n=0;
-    else{warn.push({t:`${wall.name} is too short for a bay once the corner unit is allowed for.`,bad:true});return base;}
-  }else if(spec.fillWall&&!spec.bayClear){
-    W=(Ln-(n+1)*t)/n;
-    if(W>sec.maxSpan){
-      const nB=n+1,WB=(Ln-(nB+1)*t)/nB;
-      if(n*pb(sec.maxSpan)>nB*pb(Math.min(WB,sec.maxSpan))){W=sec.maxSpan;const rem=Ln-(t+n*(W+t));if(rem-t>=f+2*GAP)extraW=Math.floor(rem-t);}
-      else{n=nB;W=WB;while(W>sec.maxSpan){n++;W=(Ln-(n+1)*t)/n;}}
-    }
+  const man=spec.manual[wi];
+  let seq=[],W=0,perShelf=0;
+  if(man&&man.length){
+    seq=man.map(m=>({type:m.type,width:m.width,topShelf:m.topShelf}));
+    seq.forEach(s=>{if(s.width>sec.maxSpan)warn.push({t:`A ${cm(s.width)} bay on ${wall.name} is wider than the ${cm(sec.maxSpan)} limit for ${sec.label} rails. Narrow it, split it, or switch to 47 × 100 timber.`,bad:true,dedupe:`span-${wi}-${s.width}`});});
+    const st=seq.find(s=>s.type==="storage");W=st?st.width:0;perShelf=pb(W);
+  }else{
+    const talls=spec.tallBays.filter(x=>x.wall===wi);
+    const tallUse=talls.reduce((a,x)=>a+x.width+t,0);
+    if(talls.length&&L<tallUse+t){warn.push({t:`The tall bays don't fit on ${wall.name}. Make them narrower or move one to another wall.`,bad:true});return base;}
+    const Ln=L-tallUse;
+    let k=spec.boxesPerBay;
+    if(k==="auto"){k=1;for(let c=3;c>=1;c--){if(c*f+(c+1)*GAP<=sec.maxSpan){k=c;break;}}}
+    let W0=spec.bayClear||(k*f+(k+1)*GAP);
+    if(W0>sec.maxSpan){warn.push({t:`${k} boxes side by side needs ${Math.round(W0/10)} cm between uprights, more than the ${Math.round(sec.maxSpan/10)} cm limit for ${sec.label} rails, so bays were narrowed.`,bad:true});W0=sec.maxSpan;}
+    let n=Math.floor((Ln-t)/(W0+t)),extraW=0;
+    if(n<1){
+      if(Ln-2*t>=300){n=1;W=Math.min(Ln-2*t,sec.maxSpan);}
+      else if(talls.length)n=0;
+      else{warn.push({t:`${wall.name} is too short for a bay once the corner unit is allowed for.`,bad:true});return base;}
+    }else if(spec.fillWall&&!spec.bayClear){
+      W=(Ln-(n+1)*t)/n;
+      if(W>sec.maxSpan){
+        const nB=n+1,WB=(Ln-(nB+1)*t)/nB;
+        if(n*pb(sec.maxSpan)>nB*pb(Math.min(WB,sec.maxSpan))){W=sec.maxSpan;const rem=Ln-(t+n*(W+t));if(rem-t>=f+2*GAP)extraW=Math.floor(rem-t);}
+        else{n=nB;W=WB;while(W>sec.maxSpan){n++;W=(Ln-(n+1)*t)/n;}}
+      }
+    }else W=W0;
+    W=Math.floor(W);
+    const ws=[...(extraW?[extraW]:[]),...Array(n).fill(W)]; n=ws.length;
+    perShelf=n?pb(W):0;
+    if(n&&perShelf===0)warn.push({t:`Bays on ${wall.name} are ${Math.round(W/10)} cm wide, too narrow for a box ${Math.round(f/10)} cm across. They'll still hold smaller items.`,bad:true});
+    const wbs=spec.workbench, benchHere=wbs.enabled&&wbs.wall===wi&&n>0;
+    const benchIdx=benchHere?(wbs.at==="start"?0:wbs.at==="middle"?Math.floor((n-1)/2):n-1):-1;
+    const T=x=>({type:"tall",width:x.width,topShelf:x.topShelf});
+    talls.filter(x=>x.at==="start").forEach(x=>seq.push(T(x)));
+    const mid=Math.floor(n/2);
+    for(let i=0;i<n;i++){if(i===mid)talls.filter(x=>x.at==="middle").forEach(x=>seq.push(T(x)));seq.push({type:i===benchIdx?"bench":"storage",width:ws[i]});}
+    if(n===0)talls.filter(x=>x.at==="middle").forEach(x=>seq.push(T(x)));
+    talls.filter(x=>x.at==="end").forEach(x=>seq.push(T(x)));
   }
-  else W=W0;
-  W=Math.floor(W);
-  const ws=[...(extraW?[extraW]:[]),...Array(n).fill(W)]; n=ws.length;
-  const used=t+ws.reduce((a,x)=>a+x+t,0)+tallUse, spare=L-used;
-  const offset=start+((isL&&wi===0)?spare:0);
-  const perShelf=n?pb(W):0;
-  if(n&&perShelf===0)warn.push({t:`Bays on ${wall.name} are ${Math.round(W/10)} cm wide, too narrow for a box ${Math.round(f/10)} cm across. They'll still hold smaller items.`,bad:true});
+  if(!seq.length)return base;
+  const used=t+seq.reduce((a,s)=>a+s.width+t,0), spare=L-used;
+  if(spare<0)warn.push({t:`${wall.name}: this arrangement needs ${m2(used+start)} but the wall is ${m2(wall.length)}, so it's ${cm(-spare)} too long. Narrow or remove a bay.`,bad:true});
+  const offset=start+((isL&&wi===0&&spare>0)?spare:0);
   const lv=globalLevels(spec,sec,warn);
-  const wb=spec.workbench, benchHere=wb.enabled&&wb.wall===wi&&n>0;
-  const benchIdx=benchHere?(wb.at==="start"?0:wb.at==="middle"?Math.floor((n-1)/2):n-1):-1;
-  const thick=kind=>(kind==="bench"?2*PLY:PLY)+railH;
-  const seq=[];
-  talls.filter(x=>x.at==="start").forEach(x=>seq.push({tall:x}));
-  const mid=Math.floor(n/2);
-  for(let i=0;i<n;i++){if(i===mid)talls.filter(x=>x.at==="middle").forEach(x=>seq.push({tall:x}));seq.push({ni:i});}
-  if(n===0)talls.filter(x=>x.at==="middle").forEach(x=>seq.push({tall:x}));
-  talls.filter(x=>x.at==="end").forEach(x=>seq.push({tall:x}));
+  const wb=spec.workbench, thick=kind=>(kind==="bench"?2*PLY:PLY)+railH;
   const bays=[];let x=offset+t;
   seq.forEach((s,idx)=>{
-    let items,Wb,isBench=false,tall=!!s.tall,ties=[];
-    if(tall){
-      Wb=s.tall.width;
-      items=s.tall.topShelf?[{h:spec.unitHeight,kind:"shelf"}]:[];
-      ties=[300,Math.round(spec.unitHeight*0.55)];
-    }else{
-      Wb=ws[s.ni];isBench=s.ni===benchIdx;
-      if(isBench){
-        const under=wb.height-thick("bench");
-        const below=lv.filter(l=>l+150<=under);
-        let above=[];
-        if(wb.upperShelf){
-          above=lv.filter(l=>l-PLY-railH>=wb.height+600);
-          if(!above.length){const c=Math.round(wb.height+700+PLY+railH);if(c<=spec.unitHeight)above=[c];}
-        }
-        items=[...below.map(h=>({h,kind:"shelf"})),{h:wb.height,kind:"bench"},...above.map(h=>({h,kind:"shelf"}))];
-      }else items=lv.map(h=>({h,kind:"shelf"}));
-    }
+    const Wb=s.width,tall=s.type==="tall",isBench=s.type==="bench";let items,ties=[];
+    if(tall){items=s.topShelf?[{h:spec.unitHeight,kind:"shelf"}]:[];ties=[300,Math.round(spec.unitHeight*0.55)];}
+    else if(isBench){
+      const under=wb.height-thick("bench");
+      const below=lv.filter(l=>l+150<=under);
+      let above=[];
+      if(wb.upperShelf){
+        above=lv.filter(l=>l-PLY-railH>=wb.height+600);
+        if(!above.length){const c=Math.round(wb.height+700+PLY+railH);if(c<=spec.unitHeight)above=[c];}
+      }
+      items=[...below.map(h=>({h,kind:"shelf"})),{h:wb.height,kind:"bench"},...above.map(h=>({h,kind:"shelf"}))];
+    }else items=lv.map(h=>({h,kind:"shelf"}));
     const ps=pb(Wb);
     items.forEach((it,j)=>{
       const nx=items[j+1];
       it.clear=nx?(nx.h-thick(nx.kind)-it.h):(spec.ceiling-it.h);
       it.boxes=(it.kind==="shelf"&&it.clear>=spec.box.h+20&&spec.depth>=boxD+10)?ps:0;
     });
-    bays.push({i:idx,x0:x,W:Wb,bench:isBench,tall,ties,items,perShelf:ps});
+    bays.push({i:idx,x0:x,W:Wb,bench:isBench,tall,ties,items,perShelf:ps,topShelf:tall?!!s.topShelf:true});
     x+=Wb+t;
   });
-  return {...base,bays,n:bays.length,W,used,spare,offset,perShelf};
+  return {...base,bays,n:bays.length,W,used,spare,offset,perShelf,manual:!!(man&&man.length)};
 }
 function computeAll(specIn){
   const spec=sanitize(specIn), sec=SECTIONS[spec.frame], warn=[];
@@ -497,16 +530,19 @@ function packSheets(items){
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const cm=mm=>`${Math.round(mm/10)} cm`, m2=mm=>`${(mm/1000).toFixed(2)} m`;
 let uidN=0;
-function elevationSVG(R,w){
-  const spec=R.spec,sec=R.sec,t=sec.h,railH=sec.h,uid=++uidN;
+function elevationSVG(R,w,opts={}){
+  const spec=R.spec,sec=R.sec,t=sec.h,railH=sec.h,uid=++uidN,inter=!!opts.interactive,sel=opts.sel;
   const VW=900,VH=450,ml=60,mr=20,mt=26,mb=70;
-  const s=Math.min((VW-ml-mr)/w.length,(VH-mt-mb)/spec.ceiling);
+  const endX=Math.max(w.length,w.offset+w.used);
+  const s=Math.min((VW-ml-mr)/endX,(VH-mt-mb)/spec.ceiling);
   const X=mm=>ml+mm*s,Y=h=>VH-mb-h*s;
   const thick=k=>(k==="bench"?2*PLY:PLY)+railH;
-  let o=`<svg viewBox="0 0 ${VW} ${VH}" class="draw" role="img" aria-label="Front view of ${esc(w.name)}"><defs><pattern id="hp${uid}" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9" class="hatchline"/></pattern></defs>`;
+  let o=`<svg viewBox="0 0 ${VW} ${VH}" class="draw${inter?" inter":""}" role="img" aria-label="Front view of ${esc(w.name)}" data-wi="${w.wi}" data-s="${s}" data-ml="${ml}"><defs><pattern id="hp${uid}" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9" class="hatchline"/></pattern><pattern id="hr${uid}" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9" class="overline"/></pattern></defs>`;
   o+=`<rect x="${X(0)}" y="${Y(spec.ceiling)}" width="${w.length*s}" height="${spec.ceiling*s}" class="wallbg"/>`;
+  if(endX>w.length){o+=`<rect x="${X(w.length)}" y="${Y(spec.ceiling)}" width="${(endX-w.length)*s}" height="${spec.ceiling*s}" fill="url(#hr${uid})" class="over"/>`;
+    o+=`<text x="${X((w.length+endX)/2)}" y="${Y(spec.ceiling)-7}" text-anchor="middle" class="lbl danger">Over by ${cm(endX-w.length)}</text>`;}
   o+=`<line x1="${X(0)}" y1="${Y(spec.ceiling)}" x2="${X(w.length)}" y2="${Y(spec.ceiling)}" class="ceil"/>`;
-  o+=`<text x="${X(w.length)-4}" y="${Y(spec.ceiling)-7}" text-anchor="end" class="lbl">Ceiling ${cm(spec.ceiling)}</text>`;
+  o+=`<text x="${X(Math.min(w.length,endX))-4}" y="${Y(spec.ceiling)-7}" text-anchor="end" class="lbl">${endX>w.length?"":"Ceiling "+cm(spec.ceiling)}</text>`;
   if(w.start>0){o+=`<rect x="${X(0)}" y="${Y(spec.unitHeight)}" width="${w.start*s}" height="${spec.unitHeight*s}" fill="url(#hp${uid})" class="blocked"/>`;
     if(w.start*s>60)o+=`<text x="${X(w.start/2)}" y="${Y(spec.unitHeight/2)}" text-anchor="middle" class="lbl strong">Corner</text>`;}
   if(w.n&&w.spare>=150){const sx=(spec.layout==="L"&&w.wi===0)?0:w.offset+w.used;
@@ -516,6 +552,7 @@ function elevationSVG(R,w){
   const heights=new Set();
   w.bays.forEach(bay=>{
     const x0=bay.x0;
+    o+=`<g data-g="${bay.i}">`;
     if(bay.tall){
       bay.ties.forEach(th=>{o+=`<rect x="${X(x0)}" y="${Y(th)}" width="${bay.W*s}" height="${railH*s}" class="band" opacity=".45"/>`;});
       const lw=Math.min(bay.W*0.7,420), lx=x0+(bay.W-lw)/2, lh=Math.min(spec.unitHeight-(bay.items.length?PLY+railH+60:60),2100);
@@ -536,22 +573,32 @@ function elevationSVG(R,w){
           o+=`<rect x="${X(bx)}" y="${Y(it.h+bh)}" width="${w.f*s}" height="${bh*s}" rx="2" class="tote"/><rect x="${X(bx)}" y="${Y(it.h+bh)}" width="${w.f*s}" height="${Math.max(3,lidH*s)}" rx="2" class="lid"/>`;}
       }
     });
-    bay.items.forEach(it=>{
-      const th=thick(it.kind);
-      o+=`<rect x="${X(x0-t)}" y="${Y(it.h)}" width="${(bay.W+2*t)*s}" height="${th*s}" class="${it.kind==="bench"?"benchtop":"band"}"/>`;
-    });
+    bay.items.forEach(it=>{o+=`<rect x="${X(x0-t)}" y="${Y(it.h)}" width="${(bay.W+2*t)*s}" height="${thick(it.kind)*s}" class="${it.kind==="bench"?"benchtop":"band"}"/>`;});
     const cnt=bay.items.reduce((a,it)=>a+it.boxes,0);
     o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+20}" text-anchor="middle" class="lbl strong">${bay.tall?"Tall":bay.bench?"Workbench":cnt+" box"+(cnt===1?"":"es")}</text>`;
     o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+37}" text-anchor="middle" class="lbl">${cm(bay.W)} clear</text>`;
+    if(inter){
+      const on=sel===bay.i;
+      if(on)o+=`<rect x="${X(x0)+1}" y="${Y(spec.unitHeight)+1}" width="${bay.W*s-2}" height="${spec.unitHeight*s-2}" class="selbox"/>`;
+      o+=`<rect x="${X(x0)}" y="${Y(spec.unitHeight)}" width="${bay.W*s}" height="${spec.unitHeight*s}" class="hit" data-i="${bay.i}"><title>Drag to move, click for options</title></rect>`;
+    }
+    o+=`</g>`;
   });
-  o+=`<line x1="${X(0)-8}" y1="${Y(0)}" x2="${X(w.length)+8}" y2="${Y(0)}" class="floor"/>`;
+  if(inter)w.bays.forEach(bay=>{
+    const hx=X(bay.x0+bay.W), hw=Math.max(t*s,6);
+    o+=`<rect x="${hx-6}" y="${Y(spec.unitHeight)}" width="${hw+12}" height="${spec.unitHeight*s}" class="handle" data-h="${bay.i}"><title>Drag to resize</title></rect>`;
+    o+=`<rect x="${hx+hw/2-3}" y="${Y(spec.unitHeight/2)-16}" width="6" height="32" rx="3" class="grip${sel===bay.i?" on":""}"/>`;
+  });
+  o+=`<line x1="${X(0)-8}" y1="${Y(0)}" x2="${X(endX)+8}" y2="${Y(0)}" class="floor"/>`;
   const dy=Y(0)+56;
   o+=`<line x1="${X(0)}" y1="${dy}" x2="${X(w.length)}" y2="${dy}" class="dim"/><line x1="${X(0)}" y1="${dy-5}" x2="${X(0)}" y2="${dy+5}" class="dim"/><line x1="${X(w.length)}" y1="${dy-5}" x2="${X(w.length)}" y2="${dy+5}" class="dim"/>`;
-  o+=`<rect x="${X(w.length/2)-90}" y="${dy-9}" width="180" height="18" class="wallbg"/><text x="${X(w.length/2)}" y="${dy+4}" text-anchor="middle" class="lbl strong">${esc(w.name)} ${m2(w.length)}</text>`;
+  const dimTxt=`${esc(w.name)} ${m2(w.length)}  ·  needs ${m2(w.used+w.start)}`;
+  o+=`<rect x="${X(w.length/2)-130}" y="${dy-9}" width="260" height="18" class="wallbg"/><text x="${X(w.length/2)}" y="${dy+4}" text-anchor="middle" class="lbl strong">${dimTxt}</text>`;
   const hs=[...heights].sort((a,b)=>a-b);let last=-1e9;
   o+=`<text x="${X(0)-8}" y="${Y(spec.ceiling)+4}" text-anchor="end" class="lbl">cm</text>`;
   hs.forEach(h=>{if((h-last)*s<14)return;last=h;o+=`<text x="${X(0)-8}" y="${Y(h)+4}" text-anchor="end" class="lbl">${Math.round(h/10)}</text>`;});
   if(!w.n)o+=`<text x="${X(w.length/2)}" y="${Y(spec.ceiling/2)}" text-anchor="middle" class="lbl strong">No room for a bay on this wall</text>`;
+  if(inter)o+=`<g class="ov"></g>`;
   return o+"</svg>";
 }
 function planSVG(R){
@@ -645,23 +692,113 @@ function stepsFor(R){
 /* ---------- UI ---------- */
 const $=id=>document.getElementById(id);
 let spec=(()=>{try{const s=localStorage.getItem("trp-spec");if(s)return sanitize(JSON.parse(s));}catch(e){}return sanitize(DEFAULT_SPEC);})();
-let view=0, R=null;
+let view=0, R=null, sel=null;
 function save(){try{localStorage.setItem("trp-spec",JSON.stringify(spec));}catch(e){}}
 function render(){
   R=computeAll(spec); spec=R.spec; save();
   const views=[...R.walls.map(w=>w.name+" front"),"Plan"];
   if(view>=views.length)view=0;
   $("viewbar").innerHTML=views.map((v,i)=>`<button class="vbtn" aria-pressed="${i===view}" data-v="${i}">${esc(v)}</button>`).join("");
-  $("viewbar").querySelectorAll("button").forEach(b=>b.onclick=()=>{view=+b.dataset.v;render();});
-  const bays=R.walls.reduce((a,w)=>a+w.n,0), runs=R.walls.reduce((a,w)=>a+w.used,0);
-  $("stats").innerHTML=[[R.totes,"box spaces"],[bays,"bays"],[m2(runs),"of shelving"],[cm(spec.depth),"deep"]].map(([b,l])=>`<div class="stat"><b>${b}</b><span>${l}</span></div>`).join("");
-  $("drawing").innerHTML=view<R.walls.length?elevationSVG(R,R.walls[view]):planSVG(R);
+  $("viewbar").querySelectorAll("button").forEach(b=>b.onclick=()=>{view=+b.dataset.v;sel=null;render();});
+  const bays=R.walls.reduce((a,w)=>a+w.n,0), need=R.walls.reduce((a,w)=>a+w.used,0), avail=R.walls.reduce((a,w)=>a+w.L,0);
+  $("stats").innerHTML=[[R.totes,"box spaces",""],[bays,"bays",""],[m2(need),"of wall needed",need>avail?"bad":""],[m2(avail),"available",""],[cm(spec.depth),"deep",""]].map(([b,l,c])=>`<div class="stat ${c}"><b>${b}</b><span>${l}</span></div>`).join("");
+  if(sel&&(sel.wi!==view||!R.walls[sel.wi]||!R.walls[sel.wi].bays[sel.i]))sel=null;
+  $("drawing").innerHTML=view<R.walls.length?elevationSVG(R,R.walls[view],{interactive:true,sel:sel?sel.i:null}):planSVG(R);
+  renderBaybar(); attachDrag();
   $("warns").innerHTML=R.warnings.map(w=>`<li class="${w.bad?"bad":""}">${esc(w.t)}</li>`).join("");
   $("shop").innerHTML=`<table class="tbl"><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th>For</th></tr></thead><tbody>${shopRows(R).map(r=>`<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td>${esc(r[2])}</td></tr>`).join("")}</tbody></table>`;
   $("cuts").innerHTML=`<table class="tbl"><thead><tr><th>Part</th><th>Size</th><th style="text-align:right">Qty</th><th>Material</th></tr></thead><tbody>${cutRows(R).map(r=>`<tr><td>${esc(r.name)}</td><td class="n" style="text-align:left">${esc(r.size)}</td><td class="n">${r.qty}</td><td>${esc(r.mat)}</td></tr>`).join("")}</tbody></table>`;
   $("bars").innerHTML=groupBins(R.tplan.bins).map(g=>`<div class="barrow"><span>${(g.bin.stock/1000).toFixed(1)} m × ${g.n}</span><div class="bar" title="Offcut ${Math.max(0,g.bin.stock-g.bin.used+KERF)} mm">${g.bin.cuts.map(c=>`<div class="cut" style="width:${c.len/g.bin.stock*100}%" title="${esc(c.name)} ${c.len} mm">${c.len/g.bin.stock>.12?c.len:""}</div>`).join("")}</div></div>`).join("")+`<p class="fine">About ${Math.round(R.tplan.waste*100)}% offcut waste, allowing ${KERF} mm per saw cut.</p>`;
   $("sheets").innerHTML=[...groupSheets(R.splan.sheets).map(g=>[g,SHEETS[spec.sheet]]),...groupSheets(R.pplan.sheets).map(g=>[g,"Pegboard"])].map(([g,l])=>`<figure>${sheetSVG(g.sheet)}<figcaption>${esc(l)} × ${g.n}</figcaption></figure>`).join("")||`<p class="fine">No sheets needed.</p>`;
   $("steps").innerHTML=stepsFor(R).map(s=>`<li>${esc(s)}</li>`).join("");
+}
+
+/* bay editing */
+const fitW=(k,f)=>k*f+(k+1)*GAP;
+function snapWidth(W,f){W=Math.max(150,Math.min(3000,W));for(let k=1;k<=6;k++){const fw=fitW(k,f);if(Math.abs(W-fw)<50)return fw;}return Math.round(W/10)*10;}
+function ensureManual(wi){if(!spec.manual[wi])spec.manual[wi]=R.walls[wi].bays.map(b=>({type:b.tall?"tall":b.bench?"bench":"storage",width:b.W,topShelf:b.topShelf}));return spec.manual[wi];}
+function editBays(wi,fn){const arr=ensureManual(wi);fn(arr);spec=sanitize(spec);render();}
+function renderBaybar(){
+  const bb=$("baybar");
+  if(view>=R.walls.length){bb.innerHTML="";return;}
+  const w=R.walls[view],sp=w.spare;
+  let o="";
+  if(w.manual)o+=`<div class="manual">You've arranged this wall by hand, so the automatic bay, workbench and tall storage settings don't apply to it. <button class="vbtn" data-act="auto">Back to automatic</button></div>`;
+  o+=`<div class="row"><span class="note ${sp<0?"bad":""}">${esc(w.name)} needs <b>${m2(w.used+w.start)}</b> of ${m2(w.length)}${sp>=0?`, leaving ${cm(sp)} spare.`:`, ${cm(-sp)} too long.`} Drag a bay to move it, drag its right edge to resize, or click it for options.</span></div>`;
+  if(sel){
+    const b=w.bays[sel.i],type=b.tall?"tall":b.bench?"bench":"storage",n=w.bays.length;
+    const k=b.perShelf;
+    o+=`<div class="sel" role="group" aria-label="Selected bay">
+      <div class="row"><b>Bay ${sel.i+1} of ${n}</b><span class="note">${cm(b.W)} clear${type==="tall"?"":`, ${k} box${k===1?"":"es"} per shelf`}</span></div>
+      <div class="row">
+        <button class="vbtn" data-act="left" ${sel.i===0?"disabled":""}>Move left</button>
+        <button class="vbtn" data-act="right" ${sel.i===n-1?"disabled":""}>Move right</button>
+        ${type==="tall"?"":`<button class="vbtn" data-act="less" ${k<=1?"disabled":""} aria-label="One box fewer per shelf">− box</button><button class="vbtn" data-act="more" aria-label="One more box per shelf">+ box</button>`}
+        <label class="note">Width <input type="number" id="bay-w" min="15" max="300" step="1" value="${Math.round(b.W/10)}"> cm</label>
+        <label class="note">Type <select id="bay-t"><option value="storage" ${type==="storage"?"selected":""}>Storage</option><option value="bench" ${type==="bench"?"selected":""}>Workbench</option><option value="tall" ${type==="tall"?"selected":""}>Tall</option></select></label>
+        ${type==="tall"?`<label class="note"><input type="checkbox" id="bay-top" ${b.topShelf?"checked":""}> Top board</label>`:""}
+        <button class="vbtn" data-act="remove" ${n<=1?"disabled":""}>Remove</button>
+        <button class="vbtn" data-act="desel">Done</button>
+      </div></div>`;
+  }
+  o+=`<div class="row"><button class="vbtn" data-act="add">Add storage bay</button><button class="vbtn" data-act="addtall">Add tall bay</button></div>`;
+  bb.innerHTML=o;
+  const wi=view;
+  bb.querySelectorAll("[data-act]").forEach(el=>el.onclick=()=>{
+    const act=el.dataset.act,i=sel?sel.i:0;
+    if(act==="auto"){spec.manual[wi]=null;sel=null;spec=sanitize(spec);render();return;}
+    if(act==="desel"){sel=null;render();return;}
+    if(act==="add"){editBays(wi,a=>{a.push({type:"storage",width:fitW(Math.max(1,w.perShelf||2),w.f),topShelf:true});});sel={wi,i:R.walls[wi].bays.length-1};render();return;}
+    if(act==="addtall"){editBays(wi,a=>{a.push({type:"tall",width:400,topShelf:true});});sel={wi,i:R.walls[wi].bays.length-1};render();return;}
+    if(act==="left"||act==="right"){const j=act==="left"?i-1:i+1;editBays(wi,a=>{const [x]=a.splice(i,1);a.splice(j,0,x);});sel={wi,i:j};render();return;}
+    if(act==="less"||act==="more"){const k=w.bays[i].perShelf+(act==="more"?1:-1);editBays(wi,a=>{a[i].width=fitW(Math.max(1,k),w.f);});return;}
+    if(act==="remove"){editBays(wi,a=>{a.splice(i,1);});sel=null;render();return;}
+  });
+  const bw=$("bay-w"),bt=$("bay-t"),btop=$("bay-top");
+  if(bw)bw.onchange=()=>{const v=parseFloat(bw.value);if(isFinite(v))editBays(wi,a=>{a[sel.i].width=Math.round(v*10);});};
+  if(bt)bt.onchange=()=>editBays(wi,a=>{const x=a[sel.i];x.type=bt.value;if(bt.value==="tall"&&x.width>800)x.width=400;});
+  if(btop)btop.onchange=()=>editBays(wi,a=>{a[sel.i].topShelf=btop.checked;});
+}
+function attachDrag(){
+  const svg=$("drawing").querySelector("svg.inter");if(!svg)return;
+  const wi=+svg.dataset.wi,s=+svg.dataset.s,ml=+svg.dataset.ml,w=R.walls[wi],ov=svg.querySelector(".ov");
+  const H=R.spec.unitHeight,VH=450,mb=70,Y=h=>VH-mb-h*s,X=mm=>ml+mm*s;
+  const toMm=ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());return (p.x-ml)/s;};
+  let d=null;
+  svg.addEventListener("pointerdown",ev=>{
+    const hd=ev.target.closest("[data-h]"),bd=ev.target.closest("[data-i]");
+    if(!hd&&!bd)return;
+    if(ev.button!==undefined&&ev.button!==0)return;
+    d={mode:hd?"resize":"move",i:+(hd?hd.dataset.h:bd.dataset.i),start:toMm(ev),moved:false,id:ev.pointerId};
+  });
+  svg.addEventListener("pointermove",ev=>{
+    if(!d||ev.pointerId!==d.id)return;
+    const mm=toMm(ev),dx=mm-d.start;
+    if(!d.moved){if(Math.abs(dx*s)<6)return;d.moved=true;try{svg.setPointerCapture(ev.pointerId);}catch(e){}svg.classList.add("dragging");}
+    ev.preventDefault();
+    const b=w.bays[d.i];
+    if(d.mode==="resize"){
+      d.nw=snapWidth(b.W+dx,w.f);
+      const k=Math.max(0,Math.floor((d.nw-GAP)/(w.f+GAP)));
+      const lx=X(b.x0),rw=d.nw*s,ly=Y(H);
+      ov.innerHTML=`<rect x="${lx}" y="${ly}" width="${rw}" height="${H*s}" class="pv"/><rect x="${lx+rw/2-80}" y="${ly+8}" width="160" height="26" rx="4" class="pvbg"/><text x="${lx+rw/2}" y="${ly+26}" text-anchor="middle" class="pvlbl">${cm(d.nw)}${b.tall?"":` · ${k} box${k===1?"":"es"}`}</text>`;
+    }else{
+      const g=svg.querySelector(`[data-g="${d.i}"]`);if(g)g.setAttribute("transform",`translate(${dx*s},0)`);
+      const others=w.bays.filter(x=>x.i!==d.i);
+      let to=others.filter(x=>x.x0+x.W/2<mm).length;d.to=to;
+      const ix=to===0?(others[0]?others[0].x0-w.t/2:b.x0):others[to-1].x0+others[to-1].W+w.t/2;
+      ov.innerHTML=`<line x1="${X(ix)}" y1="${Y(H)-6}" x2="${X(ix)}" y2="${Y(0)}" class="pvline"/>`;
+    }
+  });
+  const end=ev=>{
+    if(!d||(ev&&ev.pointerId!==d.id))return;const x=d;d=null;svg.classList.remove("dragging");
+    if(!x.moved){sel=(sel&&sel.i===x.i)?null:{wi,i:x.i};render();return;}
+    if(x.mode==="resize"&&x.nw){sel={wi,i:x.i};editBays(wi,a=>{a[x.i].width=x.nw;});return;}
+    if(x.mode==="move"&&x.to!==undefined&&x.to!==x.i){sel={wi,i:x.to};editBays(wi,a=>{const [y]=a.splice(x.i,1);a.splice(x.to,0,y);});return;}
+    render();
+  };
+  svg.addEventListener("pointerup",end);
+  svg.addEventListener("pointercancel",()=>{d=null;render();});
 }
 
 /* form sync */
@@ -701,6 +838,7 @@ function readForm(){
     boxesPerBay:F("bpb").value==="auto"?"auto":+F("bpb").value,bayClear:F("bay").value?toMm(F("bay").value):null,fillWall:F("fill").checked,
     levelsMode:lm,levels,
     workbench:{enabled:F("bench").checked,wall:+F("bwall").value,at:F("bat").value,height:toMm(F("bhgt").value),upperShelf:F("upper").checked},
+    manual:layout===prevLayout?spec.manual:[null,null],
     tallBays:F("tall").checked?[{wall:+F("twall").value,at:F("tat").value,width:toMm(F("tw").value),topShelf:F("ttop").checked},...spec.tallBays.slice(1)]:[],
     frame:F("frame").value,sheet:F("sheet").value};
 }
@@ -716,7 +854,7 @@ let sample=null,busy=false,ctl=null;const turns=[];
 function addMsg(role,text){const d=document.createElement("div");d.className="msg "+role;d.textContent=text;$("chatlog").appendChild(d);$("chatlog").scrollTop=$("chatlog").scrollHeight;return d;}
 addMsg("ai","Tell me about your space: wall lengths, ceiling height, whether it's a corner, and anything special like a taller bottom section, a workbench, or a tall bay for a ladder. I'll redraw the plan as we go. You can also fine-tune every number in Adjust.");
 function summary(){
-  return R.walls.map(w=>`${w.name}: ${w.n} bays (${w.bays.map(b=>(b.tall?"tall ":b.bench?"bench ":"")+b.W+" mm").join(", ")}), shelf heights ${[...new Set(w.bays.flatMap(b=>b.items.map(i=>i.h)))].sort((a,b)=>a-b).join("/")} mm`).join("; ")+`. Total box spaces: ${R.totes}. Notes: ${R.warnings.map(w=>w.t).join(" ")||"none"}`;
+  return `Box front (the side facing out) is ${R.walls[0]?R.walls[0].f:0} mm. `+R.walls.map(w=>`${w.name} (${w.manual?"arranged by hand":"automatic"}, needs ${w.used+w.start} of ${w.length} mm): ${w.n} bays left to right (${w.bays.map(b=>(b.tall?"tall ":b.bench?"bench ":"")+b.W+" mm").join(", ")}), shelf heights ${[...new Set(w.bays.flatMap(b=>b.items.map(i=>i.h)))].sort((a,b)=>a-b).join("/")} mm`).join("; ")+`. Total box spaces: ${R.totes}. Notes: ${R.warnings.map(w=>w.t).join(" ")||"none"}`;
 }
 function buildPrompt(msg){
   const railStack=PLY+SECTIONS[spec.frame].h;
@@ -737,6 +875,7 @@ SPEC FIELDS (all lengths in millimetres):
 - levels: ascending shelf top heights above the floor, e.g. [120, 1300, 1800]. The lowest possible is about ${railStack+13}. Each shelf's structure is ${railStack} mm thick below its top surface.
 - workbench: {enabled, wall (0 or 1), at ("start" = left end, "middle", "end" = right end), height (bench surface), upperShelf (a shelf with lights above the bench)}.
 - tallBays: array of 0 to 4 narrow full-height bays with no shelves, for ladders, brooms, long tools and other tall items: [{wall (0 or 1), at ("start" = left end, "middle", "end" = right end), width (clear width between uprights; default 400), topShelf (true = one board across the top of the uprights)}]. Use this whenever the user asks for a tall partition, ladder space, or somewhere to stand long items upright. If they don't give a width, use 400 and say so.
+- manual: [wall0, wall1]. Each is null (automatic arrangement) or an ordered left-to-right array of bays [{type: "storage"|"bench"|"tall", width (clear width between uprights), topShelf (tall bays only)}]. When set, it overrides fillWall, bayClear, tallBays and the workbench position for that wall. Use it when the user wants to move, swap, reorder, resize, add or remove specific bays: copy the current bays listed below and change only what was asked. To fit N boxes side by side, width = N x box front + (N+1) x 30. Set an entry back to null if they ask for the automatic layout.
 - frame: "38x89" (CLS) or "47x100" (C24, allows wider bays).
 - sheet: "ply18" or "osb18".
 
