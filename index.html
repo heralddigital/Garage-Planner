@@ -127,6 +127,8 @@ svg.inter{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .baybar select{padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text)}
 .manual{background:var(--note-bg);border-left:4px solid var(--lid);padding:8px 12px;font-size:15px}
 .stat.bad b{color:var(--danger)}
+.openbox{fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:6 5}
+.shelfbtn[aria-pressed="false"]{text-decoration:line-through;opacity:.6}
 .warns{margin:0;padding:0 16px 14px;list-style:none;display:flex;flex-direction:column;gap:6px}
 .warns li{background:var(--note-bg);border-left:4px solid var(--lid);padding:8px 12px;font-size:15px;border-radius:0}
 .warns li.bad{background:var(--danger-bg);border-left-color:var(--danger)}
@@ -326,7 +328,8 @@ function sanitize(s){
   const mn=Array.isArray(s.manual)?s.manual:[];
   o.manual=[0,1].map(i=>{const a=mn[i];if(!Array.isArray(a)||!a.length||(i===1&&o.layout!=="L"))return null;
     return a.slice(0,12).map(x=>{x=x||{};const type=["storage","bench","tall"].includes(x.type)?x.type:"storage";
-      return{type,width:Math.round(num(x.width,150,3000,type==="tall"?400:1000)),topShelf:x.topShelf!==false};});});
+      const skip=[...new Set((Array.isArray(x.skip)?x.skip:[]).map(Number).filter(v=>Number.isInteger(v)&&v>=0&&v<30))].sort((a,b)=>a-b);
+      return{type,width:Math.round(num(x.width,150,3000,type==="tall"?400:1000)),topShelf:x.topShelf!==false,skip};});});
   o.frame=SECTIONS[s.frame]?s.frame:"38x89";
   o.sheet=s.sheet==="osb18"?"osb18":"ply18";
   return o;
@@ -354,7 +357,7 @@ function computeWall(spec,wi,warn){
   const man=spec.manual[wi];
   let seq=[],W=0,perShelf=0;
   if(man&&man.length){
-    seq=man.map(m=>({type:m.type,width:m.width,topShelf:m.topShelf}));
+    seq=man.map(m=>({type:m.type,width:m.width,topShelf:m.topShelf,skip:m.skip||[]}));
     seq.forEach(s=>{if(s.width>sec.maxSpan)warn.push({t:`A ${cm(s.width)} bay on ${wall.name} is wider than the ${cm(sec.maxSpan)} limit for ${sec.label} rails. Narrow it, split it, or switch to 47 × 100 timber.`,bad:true,dedupe:`span-${wi}-${s.width}`});});
     const st=seq.find(s=>s.type==="storage");W=st?st.width:0;perShelf=pb(W);
   }else{
@@ -400,25 +403,33 @@ function computeWall(spec,wi,warn){
   const wb=spec.workbench, thick=kind=>(kind==="bench"?2*PLY:PLY)+railH;
   const bays=[];let x=offset+t;
   seq.forEach((s,idx)=>{
-    const Wb=s.width,tall=s.type==="tall",isBench=s.type==="bench";let items,ties=[];
+    const Wb=s.width,tall=s.type==="tall",isBench=s.type==="bench",skip=s.skip||[];let items,ties=[],slots=[];
+    const lvi=lv.map((h,li)=>({h,li}));
     if(tall){items=s.topShelf?[{h:spec.unitHeight,kind:"shelf"}]:[];ties=[300,Math.round(spec.unitHeight*0.55)];}
     else if(isBench){
       const under=wb.height-thick("bench");
-      const below=lv.filter(l=>l+150<=under);
+      const below=lvi.filter(l=>l.h+150<=under);
       let above=[];
       if(wb.upperShelf){
-        above=lv.filter(l=>l-PLY-railH>=wb.height+600);
-        if(!above.length){const c=Math.round(wb.height+700+PLY+railH);if(c<=spec.unitHeight)above=[c];}
+        above=lvi.filter(l=>l.h-PLY-railH>=wb.height+600);
+        if(!above.length){const c=Math.round(wb.height+700+PLY+railH);if(c<=spec.unitHeight)above=[{h:c,li:-1}];}
       }
-      items=[...below.map(h=>({h,kind:"shelf"})),{h:wb.height,kind:"bench"},...above.map(h=>({h,kind:"shelf"}))];
-    }else items=lv.map(h=>({h,kind:"shelf"}));
+      slots=[...below,...above];
+      items=[...below.filter(l=>!skip.includes(l.li)).map(l=>({h:l.h,kind:"shelf",li:l.li})),{h:wb.height,kind:"bench"},...above.filter(l=>l.li<0||!skip.includes(l.li)).map(l=>({h:l.h,kind:"shelf",li:l.li}))];
+    }else{slots=lvi;items=lvi.filter(l=>!skip.includes(l.li)).map(l=>({h:l.h,kind:"shelf",li:l.li}));}
     const ps=pb(Wb);
     items.forEach((it,j)=>{
       const nx=items[j+1];
       it.clear=nx?(nx.h-thick(nx.kind)-it.h):(spec.ceiling-it.h);
-      it.boxes=(it.kind==="shelf"&&it.clear>=spec.box.h+20&&spec.depth>=boxD+10)?ps:0;
+      it.open=it.kind==="shelf"&&!!nx&&it.clear>2*spec.box.h+50;
+      it.boxes=(it.kind==="shelf"&&!it.open&&it.clear>=spec.box.h+20&&spec.depth>=boxD+10)?ps:0;
     });
-    bays.push({i:idx,x0:x,W:Wb,bench:isBench,tall,ties,items,perShelf:ps,topShelf:tall?!!s.topShelf:true});
+    if(!tall){
+      const pts=[0,...items.map(it=>it.h),spec.unitHeight];
+      for(let j=1;j<pts.length;j++){const g=pts[j]-pts[j-1];if(g>1200)ties.push(Math.round(pts[j-1]+g/2));}
+      if(!items.length&&!ties.length)ties=[300,Math.round(spec.unitHeight*0.55)];
+    }
+    bays.push({i:idx,x0:x,W:Wb,bench:isBench,tall,ties,items,slots,skip,perShelf:ps,topShelf:tall?!!s.topShelf:true});
     x+=Wb+t;
   });
   return {...base,bays,n:bays.length,W,used,spare,offset,perShelf,manual:!!(man&&man.length)};
@@ -454,10 +465,8 @@ function computeAll(specIn){
         if(it.kind==="bench"){panels.push({name:"Bench top (2 layers)",w:W,h:spec.depth,qty:2});fx.s40+=edge+Math.ceil(W/300)*4;fx.glue=1;}
         else{panels.push({name:bay.tall?"Tall bay top board":"Shelf board",w:W,h:spec.depth,qty:1});fx.s40+=edge;}
       });
-      if(bay.tall){
-        if(bay.ties.length){timber.push({name:"Back tie rail",len:railLen,qty:bay.ties.length,wall:tag});fx.s80+=bay.ties.length*6;}
-        return;
-      }
+      if(bay.ties.length){timber.push({name:"Back tie rail",len:railLen,qty:bay.ties.length,wall:tag});fx.s80+=bay.ties.length*6;}
+      if(bay.tall)return;
       const shelves=bay.items.filter(it=>it.kind==="shelf");
       if(bay.bench){
         const up=bay.items.find(it=>it.kind==="shelf"&&it.h>spec.workbench.height);
@@ -553,8 +562,11 @@ function elevationSVG(R,w,opts={}){
   w.bays.forEach(bay=>{
     const x0=bay.x0;
     o+=`<g data-g="${bay.i}">`;
+    bay.ties.forEach(th=>{o+=`<rect x="${X(x0)}" y="${Y(th)}" width="${bay.W*s}" height="${railH*s}" class="band" opacity=".45"/>`;});
+    bay.items.forEach(it=>{if(!it.open)return;const top=it.h+it.clear;
+      o+=`<rect x="${X(x0)+4}" y="${Y(top)+4}" width="${bay.W*s-8}" height="${it.clear*s-8}" rx="3" class="openbox"/>`;
+      if(bay.W*s>70)o+=`<text x="${X(x0+bay.W/2)}" y="${Y(it.h+it.clear*0.78)}" text-anchor="middle" class="lbl strong">Open space</text><text x="${X(x0+bay.W/2)}" y="${Y(it.h+it.clear*0.78)+16}" text-anchor="middle" class="lbl">${cm(it.clear)} high</text>`;});
     if(bay.tall){
-      bay.ties.forEach(th=>{o+=`<rect x="${X(x0)}" y="${Y(th)}" width="${bay.W*s}" height="${railH*s}" class="band" opacity=".45"/>`;});
       const lw=Math.min(bay.W*0.7,420), lx=x0+(bay.W-lw)/2, lh=Math.min(spec.unitHeight-(bay.items.length?PLY+railH+60:60),2100);
       o+=`<line x1="${X(lx)}" y1="${Y(0)}" x2="${X(lx+lw*0.12)}" y2="${Y(lh)}" class="ladder"/><line x1="${X(lx+lw)}" y1="${Y(0)}" x2="${X(lx+lw*0.88)}" y2="${Y(lh)}" class="ladder"/>`;
       for(let r=250;r<lh;r+=280){const k=r/lh*0.12*lw;o+=`<line x1="${X(lx+k)}" y1="${Y(r)}" x2="${X(lx+lw-k)}" y2="${Y(r)}" class="ladder"/>`;}
@@ -575,7 +587,7 @@ function elevationSVG(R,w,opts={}){
     });
     bay.items.forEach(it=>{o+=`<rect x="${X(x0-t)}" y="${Y(it.h)}" width="${(bay.W+2*t)*s}" height="${thick(it.kind)*s}" class="${it.kind==="bench"?"benchtop":"band"}"/>`;});
     const cnt=bay.items.reduce((a,it)=>a+it.boxes,0);
-    o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+20}" text-anchor="middle" class="lbl strong">${bay.tall?"Tall":bay.bench?"Workbench":cnt+" box"+(cnt===1?"":"es")}</text>`;
+    o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+20}" text-anchor="middle" class="lbl strong">${bay.tall?"Tall":bay.bench?"Workbench":(cnt?cnt+" box"+(cnt===1?"":"es"):"")+(bay.items.some(i=>i.open)?(cnt?" + open":"Open space"):"")||"0 boxes"}</text>`;
     o+=`<text x="${X(x0+bay.W/2)}" y="${Y(0)+37}" text-anchor="middle" class="lbl">${cm(bay.W)} clear</text>`;
     if(inter){
       const on=sel===bay.i;
@@ -684,6 +696,7 @@ function stepsFor(R){
     `Fix every frame to the wall near the top before loading anything.`,
     `Drop the boards in between the uprights and screw them to the rails.`
   ];
+  if(s.manual.some(m=>m&&m.some(b=>b.skip&&b.skip.length)))out.push(`Where you removed shelves, leave out those rails, boards and battens (the cut list already does). Bays with a gap over 1.2 m get a back tie rail in the gap to keep the frame rigid.`);
   if(s.tallBays.length)out.push(`Tall bays have no shelves except the top board. Fit the back tie rails at 30 cm and about halfway up so the frame stays rigid, then add a strap or hooks for the ladder.`);
   if(s.workbench.enabled)out.push(`Glue and screw the two bench top layers, fit the pegboard, then fix the LED battens under the shelf above. Use plug-in lights, and get an electrician for any hardwired work.`);
   return out;
@@ -716,7 +729,7 @@ function render(){
 /* bay editing */
 const fitW=(k,f)=>k*f+(k+1)*GAP;
 function snapWidth(W,f){W=Math.max(150,Math.min(3000,W));for(let k=1;k<=6;k++){const fw=fitW(k,f);if(Math.abs(W-fw)<50)return fw;}return Math.round(W/10)*10;}
-function ensureManual(wi){if(!spec.manual[wi])spec.manual[wi]=R.walls[wi].bays.map(b=>({type:b.tall?"tall":b.bench?"bench":"storage",width:b.W,topShelf:b.topShelf}));return spec.manual[wi];}
+function ensureManual(wi){if(!spec.manual[wi])spec.manual[wi]=R.walls[wi].bays.map(b=>({type:b.tall?"tall":b.bench?"bench":"storage",width:b.W,topShelf:b.topShelf,skip:(b.skip||[]).slice()}));return spec.manual[wi];}
 function editBays(wi,fn){const arr=ensureManual(wi);fn(arr);spec=sanitize(spec);render();}
 function renderBaybar(){
   const bb=$("baybar");
@@ -739,7 +752,9 @@ function renderBaybar(){
         ${type==="tall"?`<label class="note"><input type="checkbox" id="bay-top" ${b.topShelf?"checked":""}> Top board</label>`:""}
         <button class="vbtn" data-act="remove" ${n<=1?"disabled":""}>Remove</button>
         <button class="vbtn" data-act="desel">Done</button>
-      </div></div>`;
+      </div>
+      ${b.slots&&b.slots.filter(x=>x.li>=0).length?`<div class="row"><span class="note">Shelves (click to remove or put back):</span>${b.slots.filter(x=>x.li>=0).map(x=>`<button class="vbtn shelfbtn" data-shelf="${x.li}" aria-pressed="${!b.skip.includes(x.li)}">${Math.round(x.h/10)} cm</button>`).join("")}</div>`:""}
+      </div>`;
   }
   o+=`<div class="row"><button class="vbtn" data-act="add">Add storage bay</button><button class="vbtn" data-act="addtall">Add tall bay</button></div>`;
   bb.innerHTML=o;
@@ -754,9 +769,10 @@ function renderBaybar(){
     if(act==="less"||act==="more"){const k=w.bays[i].perShelf+(act==="more"?1:-1);editBays(wi,a=>{a[i].width=fitW(Math.max(1,k),w.f);});return;}
     if(act==="remove"){editBays(wi,a=>{a.splice(i,1);});sel=null;render();return;}
   });
+  bb.querySelectorAll("[data-shelf]").forEach(el=>el.onclick=()=>{const li=+el.dataset.shelf;editBays(wi,a=>{const x=a[sel.i];x.skip=x.skip||[];x.skip=x.skip.includes(li)?x.skip.filter(v=>v!==li):[...x.skip,li];});});
   const bw=$("bay-w"),bt=$("bay-t"),btop=$("bay-top");
   if(bw)bw.onchange=()=>{const v=parseFloat(bw.value);if(isFinite(v))editBays(wi,a=>{a[sel.i].width=Math.round(v*10);});};
-  if(bt)bt.onchange=()=>editBays(wi,a=>{const x=a[sel.i];x.type=bt.value;if(bt.value==="tall"&&x.width>800)x.width=400;});
+  if(bt)bt.onchange=()=>editBays(wi,a=>{const x=a[sel.i];x.type=bt.value;if(bt.value==="tall"){x.skip=[];if(x.width>800)x.width=400;}});
   if(btop)btop.onchange=()=>editBays(wi,a=>{a[sel.i].topShelf=btop.checked;});
 }
 function attachDrag(){
@@ -854,7 +870,7 @@ let sample=null,busy=false,ctl=null;const turns=[];
 function addMsg(role,text){const d=document.createElement("div");d.className="msg "+role;d.textContent=text;$("chatlog").appendChild(d);$("chatlog").scrollTop=$("chatlog").scrollHeight;return d;}
 addMsg("ai","Tell me about your space: wall lengths, ceiling height, whether it's a corner, and anything special like a taller bottom section, a workbench, or a tall bay for a ladder. I'll redraw the plan as we go. You can also fine-tune every number in Adjust.");
 function summary(){
-  return `Box front (the side facing out) is ${R.walls[0]?R.walls[0].f:0} mm. `+R.walls.map(w=>`${w.name} (${w.manual?"arranged by hand":"automatic"}, needs ${w.used+w.start} of ${w.length} mm): ${w.n} bays left to right (${w.bays.map(b=>(b.tall?"tall ":b.bench?"bench ":"")+b.W+" mm").join(", ")}), shelf heights ${[...new Set(w.bays.flatMap(b=>b.items.map(i=>i.h)))].sort((a,b)=>a-b).join("/")} mm`).join("; ")+`. Total box spaces: ${R.totes}. Notes: ${R.warnings.map(w=>w.t).join(" ")||"none"}`;
+  return `Box front (the side facing out) is ${R.walls[0]?R.walls[0].f:0} mm. Shelf levels by index: ${(R.walls.find(w=>w.bays.length)||{bays:[]}).bays.flatMap(b=>b.slots||[]).filter((v,i,a)=>v.li>=0&&a.findIndex(z=>z.li===v.li)===i).sort((a,b)=>a.li-b.li).map(v=>v.li+"="+v.h+"mm").join(", ")}. `+R.walls.map(w=>`${w.name} (${w.manual?"arranged by hand":"automatic"}, needs ${w.used+w.start} of ${w.length} mm): ${w.n} bays left to right (${w.bays.map(b=>(b.tall?"tall ":b.bench?"bench ":"")+b.W+" mm"+(b.skip&&b.skip.length?" skip ["+b.skip.join(",")+"]":"")).join(", ")}), shelf heights ${[...new Set(w.bays.flatMap(b=>b.items.map(i=>i.h)))].sort((a,b)=>a-b).join("/")} mm`).join("; ")+`. Total box spaces: ${R.totes}. Notes: ${R.warnings.map(w=>w.t).join(" ")||"none"}`;
 }
 function buildPrompt(msg){
   const railStack=PLY+SECTIONS[spec.frame].h;
@@ -875,7 +891,7 @@ SPEC FIELDS (all lengths in millimetres):
 - levels: ascending shelf top heights above the floor, e.g. [120, 1300, 1800]. The lowest possible is about ${railStack+13}. Each shelf's structure is ${railStack} mm thick below its top surface.
 - workbench: {enabled, wall (0 or 1), at ("start" = left end, "middle", "end" = right end), height (bench surface), upperShelf (a shelf with lights above the bench)}.
 - tallBays: array of 0 to 4 narrow full-height bays with no shelves, for ladders, brooms, long tools and other tall items: [{wall (0 or 1), at ("start" = left end, "middle", "end" = right end), width (clear width between uprights; default 400), topShelf (true = one board across the top of the uprights)}]. Use this whenever the user asks for a tall partition, ladder space, or somewhere to stand long items upright. If they don't give a width, use 400 and say so.
-- manual: [wall0, wall1]. Each is null (automatic arrangement) or an ordered left-to-right array of bays [{type: "storage"|"bench"|"tall", width (clear width between uprights), topShelf (tall bays only)}]. When set, it overrides fillWall, bayClear, tallBays and the workbench position for that wall. Use it when the user wants to move, swap, reorder, resize, add or remove specific bays: copy the current bays listed below and change only what was asked. To fit N boxes side by side, width = N x box front + (N+1) x 30. Set an entry back to null if they ask for the automatic layout.
+- manual: [wall0, wall1]. Each is null (automatic arrangement) or an ordered left-to-right array of bays [{type: "storage"|"bench"|"tall", width (clear width between uprights), topShelf (tall bays only)}]. When set, it overrides fillWall, bayClear, tallBays and the workbench position for that wall. Use it when the user wants to move, swap, reorder, resize, add or remove specific bays: copy the current bays listed below and change only what was asked. To fit N boxes side by side, width = N x box front + (N+1) x 30. Each bay may also have skip: an array of shelf-level indices (0 = lowest, from the shelf heights listed below) to leave out of that bay, e.g. to make a taller open space for bulky items; "remove the bottom two shelves above the floor shelf" means skip [1, 2]. Set an entry back to null if they ask for the automatic layout.
 - frame: "38x89" (CLS) or "47x100" (C24, allows wider bays).
 - sheet: "ply18" or "osb18".
 
