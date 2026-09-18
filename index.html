@@ -164,7 +164,7 @@ svg.inter{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .sheets svg{width:100%;height:auto;display:block}
 .sh-bg{fill:var(--surface-2);stroke:var(--text);stroke-width:2}
 .sh-pc{fill:var(--timber);stroke:var(--timber-edge);stroke-width:2}
-.sh-t{fill:#2B2112;font-family:var(--font-body);font-size:120px}
+.sh-t{fill:#2B2112;font-family:var(--font-body);font-size:80px}
 ol.steps{margin:0;padding-left:22px}
 ol.steps li{margin:4px 0;max-width:75ch}
 .fine{color:var(--muted);font-size:14px;max-width:75ch}
@@ -691,9 +691,16 @@ function bayRectsH(w,X,y,h,t,s){
   return o;
 }
 function sheetSVG(sheet){
-  let o=`<svg viewBox="-20 -20 ${SHEET.w+40} ${SHEET.h+40}" role="img" aria-label="Sheet cutting layout"><rect x="0" y="0" width="${SHEET.w}" height="${SHEET.h}" class="sh-bg"/>`;
-  sheet.pcs.forEach(p=>{o+=`<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" class="sh-pc"/>`;
-    if(p.w>800&&p.h>200)o+=`<text x="${p.x+p.w/2}" y="${p.y+p.h/2+40}" text-anchor="middle" class="sh-t">${p.w} × ${p.h}</text>`;});
+  let o=`<svg viewBox="-20 -20 ${SHEET.w+40} ${SHEET.h+110}" role="img" aria-label="Sheet cutting layout"><rect x="0" y="0" width="${SHEET.w}" height="${SHEET.h}" class="sh-bg"/>`;
+  sheet.pcs.forEach(p=>{
+    o+=`<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" class="sh-pc"/>`;
+    const lbl=`${p.w} × ${p.h}`;
+    const fit=p.w>320&&p.h>100;
+    const fs=Math.min(Math.max(Math.floor(Math.min(p.w,p.h)*0.13),22),120);
+    const tx=p.x+p.w/2, ty=fit?p.y+p.h/2+fs*0.36:p.y+p.h+36;
+    const fill=fit?"#2B2112":"var(--text)";
+    o+=`<text x="${tx}" y="${ty}" text-anchor="middle" font-size="${fs}" font-family="var(--font-body)" fill="${fill}">${lbl}</text>`;
+  });
   return o+"</svg>";
 }
 function groupBins(bins){
