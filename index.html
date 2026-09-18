@@ -221,7 +221,7 @@ ol.steps li{margin:4px 0;max-width:75ch}
           </div>
         </fieldset>
         <fieldset><legend>Bays and shelves</legend>
-          <label class="c"><input type="checkbox" id="f-fill"> Stretch bays to fill the wall</label>
+          <label class="c"><input type="checkbox" id="f-fill"> Stretch bays to fill the wall <span id="fill-note" style="font-size:13px"></span></label>
           <div class="grid2">
             <label class="f">Fixed bay width (cm)<input id="f-bay" type="number" min="30" step="1" placeholder="Auto"></label>
             <label class="f">Shelf heights<select id="f-lm"><option value="auto">Fit to boxes</option><option value="custom">Custom</option></select></label>
@@ -899,6 +899,10 @@ function syncForm(){
   F("bl").value=toCm(spec.box.l); F("bw").value=toCm(spec.box.w); F("bh").value=toCm(spec.box.h);
   F("ori").value=spec.box.orientation; F("bpb").value=String(spec.boxesPerBay);
   F("fill").checked=spec.fillWall; F("bay").value=spec.bayClear?toCm(spec.bayClear):"";
+  const anyManual=spec.manual&&spec.manual.some(m=>m);
+  const fillNote=document.getElementById("fill-note");
+  if(fillNote)fillNote.textContent=anyManual?"(switching off manual arrangement)":"";
+  if(fillNote)fillNote.style.color="var(--muted)";
   F("lm").value=spec.levelsMode;
   const lv=spec.levelsMode==="auto"?autoLevels(spec,SECTIONS[spec.frame]):spec.levels;
   F("levels").value=lv.map(toCm).join(", "); F("levels").disabled=spec.levelsMode==="auto";
@@ -928,9 +932,23 @@ function readForm(){
     workbench:{enabled:F("bench").checked,wall:+F("bwall").value,at:F("bat").value,height:toMm(F("bhgt").value),upperShelf:F("upper").checked},
     manual:layout===prevLayout?spec.manual:[null,null],
     tallBays:F("tall").checked?[{wall:+F("twall").value,at:F("tat").value,width:toMm(F("tw").value),topShelf:F("ttop").checked},...spec.tallBays.slice(1)]:[],
+    stockOptions:spec.stockOptions,
     frame:F("frame").value,sheet:F("sheet").value};
 }
-$("form").addEventListener("change",()=>{spec=sanitize(readForm());syncForm();render();});
+$("form").addEventListener("change",ev=>{
+  const prev=spec;
+  const next=readForm();
+  // If a layout-level control changed and manual is active, offer to clear it
+  const layoutChanged=
+    next.fillWall!==prev.fillWall||
+    next.bayClear!==prev.bayClear||
+    next.boxesPerBay!==prev.boxesPerBay||
+    next.depth!==prev.depth;
+  if(layoutChanged&&next.manual&&next.manual.some(m=>m)){
+    next.manual=[null,null];
+  }
+  spec=sanitize(next);syncForm();render();
+});
 $("reset").onclick=()=>{spec=sanitize(DEFAULT_SPEC);syncForm();render();};
 
 /* tabs */
