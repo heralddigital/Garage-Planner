@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -132,8 +133,13 @@ svg.inter{touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .st-m{font-family:var(--font-display);font-size:17px;font-weight:600}
 .stock-breakdown{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
 .st-chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:14px}
-.c3d-wrap{position:relative}
-#c3d{border-radius:6px}
+.c3d-wrap{display:flex;flex-direction:column;gap:7px}
+#c3d{width:100%;height:440px;border-radius:6px;overflow:hidden;background:var(--note-bg)}
+#c3d canvas{display:block}
+.c3d-hint{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;font-size:13px;color:var(--muted)}
+.c3d-btns{display:flex;gap:6px}
+.c3d-hint button{font:inherit;color:inherit;border:1px solid var(--line);background:transparent;border-radius:999px;padding:3px 11px;cursor:pointer;line-height:1.4}
+.c3d-hint button:hover{background:var(--note-bg)}
 .stockopts{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:8px 0 2px;border-top:1px solid var(--line);margin-top:6px}
 .stk-lbl{font-size:14px;color:var(--muted)}
 .stk{display:flex;align-items:center;gap:5px;font-size:15px;cursor:pointer}
@@ -770,7 +776,7 @@ function render(){
   $("stats").innerHTML=[[R.totes,"box spaces",""],[bays,"bays",""],[m2(need),"of wall needed",need>avail?"bad":""],[m2(avail),"available",""],[cm(spec.depth),"deep",""]].map(([b,l,c])=>`<div class="stat ${c}"><b>${b}</b><span>${l}</span></div>`).join("");
   if(sel&&(sel.wi!==view||!R.walls[sel.wi]||!R.walls[sel.wi].bays[sel.i]))sel=null;
   const is3d=view===views.length-1, isPlan=view===R.walls.length;
-  $("drawing").innerHTML=is3d?'<div id="c3d" style="width:100%"></div>':isPlan?planSVG(R):elevationSVG(R,R.walls[view],{interactive:true,sel:sel?sel.i:null});
+  $("drawing").innerHTML=is3d?'<div class="c3d-wrap"><div id="c3d"></div><div class="c3d-hint"><span>Drag to rotate \u00b7 scroll to zoom \u00b7 shift-drag to pan</span><span class="c3d-btns"><button type="button" id="c3d-out" title="Zoom out">\u2212</button><button type="button" id="c3d-in" title="Zoom in">+</button><button type="button" id="c3d-reset">Reset view</button></span></div></div>':isPlan?planSVG(R):elevationSVG(R,R.walls[view],{interactive:true,sel:sel?sel.i:null});
   renderBaybar(); if(!is3d&&!isPlan)attachDrag(); if(is3d)draw3d(R);
   $("warns").innerHTML=R.warnings.map(w=>`<li class="${w.bad?"bad":""}">${esc(w.t)}</li>`).join("");
   $("shop").innerHTML=`<table class="tbl"><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th>For</th></tr></thead><tbody>${shopRows(R).map(r=>`<tr><td>${esc(r[0])}</td><td class="n">${r[1]}</td><td>${esc(r[2])}</td></tr>`).join("")}</tbody></table>`;
@@ -780,9 +786,9 @@ function render(){
   const byLen={};grps.forEach(g=>{const k=g.bin.stock;byLen[k]=(byLen[k]||0)+g.n;});
   const total=grps.reduce((a,g)=>a+g.n,0);
   const totalM=(grps.reduce((a,g)=>a+g.n*g.bin.stock,0)/1000).toFixed(1);
-  let out=grps.map(g=>`<div class="barrow"><span>${(g.bin.stock/1000).toFixed(1)} m × ${g.n}</span><div class="bar" title="Offcut ${Math.max(0,g.bin.stock-g.bin.used+KERF)} mm">${g.bin.cuts.map(c=>`<div class="cut" style="width:${c.len/g.bin.stock*100}%" title="${esc(c.name)} ${c.len} mm">${c.len/g.bin.stock>.12?c.len:""}</div>`).join("")}</div></div>`).join("");
-  out+=`<div class="stock-summary"><div class="stock-total"><span class="st-n">${total}</span><span class="st-lbl"> lengths needed</span><span class="st-sep"> — </span><span class="st-m">${totalM} m total</span></div><div class="stock-breakdown">${Object.keys(byLen).sort((a,b)=>+a-+b).map(k=>`<span class="st-chip"><b>${byLen[k]}</b> × ${(+k/1000).toFixed(1)} m</span>`).join("")}</div></div>`;
-  out+=`<div class="stockopts"><span class="stk-lbl">Stock lengths my merchant sells:</span>${ALL_STOCK.map(k=>`<label class="stk"><input type="checkbox" data-stk="${k}" ${spec.stockOptions[k]?"checked":""}>  ${(k/1000).toFixed(1)} m</label>`).join("")}</div>`;
+  let out=grps.map(g=>`<div class="barrow"><span>${(g.bin.stock/1000).toFixed(1)} m × ${g.n}</span><div class="bar" title="Offcut ${Math.max(0,g.bin.stock-g.bin.used+KERF)} mm">${g.bin.cuts.map(c=>`<div class="cut" style="width:${c.len/g.bin.stock*100}%" title="${esc(c.name)} ${c.len} mm">${c.len/g.bin.stock>.12?c.len:""}</div>`).join("")}</div></div>`).join("");
+  out+=`<div class="stock-summary"><div class="stock-total"><span class="st-n">${total}</span><span class="st-lbl"> lengths needed</span><span class="st-sep"> — </span><span class="st-m">${totalM} m total</span></div><div class="stock-breakdown">${Object.keys(byLen).sort((a,b)=>+a-+b).map(k=>`<span class="st-chip"><b>${byLen[k]}</b> × ${(+k/1000).toFixed(1)} m</span>`).join("")}</div></div>`;
+  out+=`<div class="stockopts"><span class="stk-lbl">Stock lengths my merchant sells:</span>${ALL_STOCK.map(k=>`<label class="stk"><input type="checkbox" data-stk="${k}" ${spec.stockOptions[k]?"checked":""}>  ${(k/1000).toFixed(1)} m</label>`).join("")}</div>`;
   out+=`<p class="fine">About ${Math.round(R.tplan.waste*100)}% offcut waste, allowing ${KERF} mm per saw cut.</p>`;
   return out;
 })();
@@ -893,219 +899,306 @@ document.addEventListener("change",ev=>{
   spec=sanitize(spec);render();
 });
 
-/* ---------- 3D view — canvas dimetric ---------- */
+/* ---------- 3D view — three.js with orbit controls ---------- */
+const THREE_URL="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+let threeLoad=null;
+function loadThree(){
+  if(window.THREE)return Promise.resolve(window.THREE);
+  if(!threeLoad)threeLoad=new Promise((ok,no)=>{
+    const s=document.createElement("script");
+    s.src=THREE_URL; s.async=true;
+    s.onload=()=>window.THREE?ok(window.THREE):no(new Error("missing"));
+    s.onerror=()=>no(new Error("network"));
+    document.head.appendChild(s);
+  });
+  return threeLoad;
+}
+
+let TD=null;                       // persistent three.js state, kept across re-renders
+const HOME={az:-0.62,pol:1.45};    // default orbit: front-left, a little above eye level
+
 function draw3d(R){
-  const el=document.getElementById("c3d"); if(!el)return;
-  const spec=R.spec, sec=R.sec, TH=sec.h; // TH = timber thickness (89mm)
+  const host=document.getElementById("c3d"); if(!host)return;
+  if(!window.THREE)host.innerHTML='<p class="note" style="padding:28px 2px">Loading the 3D view…</p>';
+  loadThree().then(()=>{
+    if(document.getElementById("c3d")!==host)return;      // user switched view while it loaded
+    try{ scene3d(host,R); }
+    catch(e){ host.innerHTML='<p class="note" style="padding:28px 2px">The 3D view could not be drawn in this browser. The wall and plan views show the same design.</p>'; }
+  }).catch(()=>{
+    host.innerHTML='<p class="note" style="padding:28px 2px">The 3D view needs to fetch a small 3D library and it could not be reached. The wall and plan views work without it.</p>';
+  });
+}
+
+function mats3d(T,dark){
+  const L=c=>new T.MeshLambertMaterial({color:c});
+  const S=a=>a.map(L);                       // a set of close tones, so timber isn't flat
+  return dark?{
+    pine:S([0xb08a55,0xa8834e,0xb8925c,0xa47c48,0xbb9761]),
+    ply:S([0x9c7440,0x946c3a]), bench:L(0xa8804a),
+    tote:L(0x2b3037), lid:L(0xd9ae22), peg:L(0x4a4336),
+    floor:L(0x2b2e34), wall:L(0x262a30), ceil:new T.MeshBasicMaterial({color:0x2e3239}), bg:0x1b1d21
+  }:{
+    pine:S([0xd6ae7a,0xcea471,0xdcb684,0xc99d69,0xe0bd8d]),
+    ply:S([0xbe8f52,0xb6874a]), bench:L(0xc79c5e),
+    tote:L(0x2d323a), lid:L(0xf2c230), peg:L(0xe8dec2),
+    floor:L(0xc8c6c0), wall:L(0xdedbd4), ceil:new T.MeshBasicMaterial({color:0xeeece8}), bg:0xeceae6
+  };
+}
+
+function scene3d(host,R){
+  const T=window.THREE;
   const dark=document.documentElement.dataset.theme==="dark"||
     (!document.documentElement.dataset.theme&&matchMedia("(prefers-color-scheme:dark)").matches);
 
-  const walls=R.walls, isL=spec.layout==="L";
-  const W0=walls[0]?walls[0].length:5300;
-  const W1=(isL&&walls[1])?walls[1].length:0;
-  const H=spec.unitHeight, D=spec.depth;
+  if(!TD){
+    let renderer;
+    try{ renderer=new T.WebGLRenderer({antialias:true}); }
+    catch(e){ host.innerHTML='<p class="note" style="padding:28px 2px">This browser could not start WebGL, so the 3D view is unavailable.</p>'; return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+    renderer.shadowMap.enabled=true;
+    renderer.shadowMap.type=T.PCFSoftShadowMap;
+    if(T.sRGBEncoding)renderer.outputEncoding=T.sRGBEncoding;
+    TD={renderer,scene:new T.Scene(),camera:new T.PerspectiveCamera(50,1,40,120000),
+        model:null,env:null,lights:null,ro:null,sig:"",
+        cam:{az:HOME.az,pol:HOME.pol,dist:6000,tx:0,ty:1000,tz:0}};
+    orbit3d(renderer.domElement);
+  }
+  const {renderer,scene,camera}=TD;
 
-  // Canvas
-  const CW=el.offsetWidth||820, DPR=devicePixelRatio||1;
-  // Dimetric projection: X→right-down at 30°, Z→right-up at 30°, Y→straight up
-  // Scale: fit horizontally
-  // Screen width of scene: (W0 + D) * cos30 (for straight)
-  // For L: W0*cos30 + W1*cos30 (right wall adds width in the Z direction)
-  const cos30=Math.cos(Math.PI/6), sin30=0.22; // flattened for lower viewpoint
-  const sceneSpanX=(W0+(isL?0:0))*cos30; // X contributes right
-  const sceneSpanZ=D*cos30;              // Z contributes left (back depth)
-  const totalW=sceneSpanX+sceneSpanZ+(isL?W1*cos30:0);
-  const sc=CW*0.88/totalW; // mm→px
+  host.innerHTML="";
+  host.appendChild(renderer.domElement);
+  renderer.domElement.style.cssText="display:block;width:100%;height:100%;cursor:grab;touch-action:pan-y";
 
-  // Canvas height: H*sc up + (W0+D)*sin30*sc down
-  const topRoom=H*sc+50*sc;
-  const botRoom=(W0+(isL?W1:0))*sin30*sc+D*sin30*sc+(isL?W1*sin30*sc:0);
-  const CH=Math.ceil((topRoom+botRoom)*1.05);
-  const canvas=document.createElement("canvas");
-  canvas.width=Math.round(CW*DPR); canvas.height=Math.round(CH*DPR);
-  canvas.style.cssText=`width:${CW}px;height:${CH}px;display:block;border-radius:6px`;
-  el.innerHTML=""; el.appendChild(canvas);
-  const g=canvas.getContext("2d"); g.scale(DPR,DPR);
+  const M=mats3d(T,dark);
+  scene.background=new T.Color(M.bg);
 
-  // Project (x,y,z) in mm → screen (px)
-  // Dimetric: X goes right+down, Z goes left+down (into scene), Y goes up
-  // sx = ox + x*cos30*sc - z*cos30*sc
-  // sy = oy - y*sc      + x*sin30*sc + z*sin30*sc
-  const ox=CW*0.06+D*cos30*sc+(isL?W1*cos30*sc:0);
-  const oy=topRoom;
-  const P=(x,y,z)=>[ox+x*cos30*sc-z*cos30*sc, oy-y*sc+x*sin30*sc+z*sin30*sc];
+  /* lights */
+  if(TD.lights)TD.lights.forEach(o=>scene.remove(o));
+  const hemi=new T.HemisphereLight(dark?0x7d8ea6:0xe8eef6, dark?0x24272c:0x8d8a82, dark?0.42:0.50);
+  const key=new T.DirectionalLight(dark?0xc8d2e0:0xfff1da, dark?0.42:0.62);
+  key.castShadow=true; key.shadow.mapSize.set(2048,2048); key.shadow.bias=-0.0008;
+  const fill=new T.DirectionalLight(dark?0x7d8698:0xdbe4f2, dark?0.16:0.18);
+  scene.add(hemi,key,key.target,fill);
+  TD.lights=[hemi,key,key.target,fill];
 
-  // ── Colour palette ──────────────────────────────────────────────────────
-  // Wood: three levels per face (top/front/side) mimicking warm side-light
-  const W={
-    // Uprights — natural CLS pine look
-    uT: dark?"#C8A050":"#E2BF72",  // top — brightest
-    uF: dark?"#B08838":"#CFA455",  // front (Z face, faces viewer-left)
-    uS: dark?"#8A6420":"#B08838",  // side (X face, faces viewer-right, in shadow)
-    // Shelf boards
-    sT: dark?"#D4B060":"#EECE80",
-    sF: dark?"#B89040":"#D4A850",
-    sS: dark?"#906818":"#B88C38",
-    // Rails (same timber, slightly different shade to show they're thinner)
-    rT: dark?"#C0A048":"#DEC068",
-    rF: dark?"#A88030":"#C89840",
-    rS: dark?"#806010":"#A87C28",
-    // Bench top
-    bT: dark?"#C8A050":"#DDB862",
-    bF: dark?"#A87838":"#C4984A",
-    bS: dark?"#805818":"#A07830",
-    // Pegboard — pale cream
-    pT: dark?"#D0C8A8":"#EDE5CC",
-    pF: dark?"#B8B098":"#D8D0B8",
-    pS: dark?"#A09880":"#C8C0A0",
-    // Tote bin — dark charcoal
-    tT: dark?"#3A3F47":"#2C3038",
-    tF: dark?"#252B32":"#222730",
-    tS: dark?"#1A1F26":"#1A1F25",
-    // Lid — yellow
-    lT: dark?"#F0C030":"#FFDA40",
-    lF: dark?"#D4A010":"#EFC020",
-    lS: dark?"#B08008":"#C8A010",
-    // Environment
-    floor: dark?"#2C2F36":"#D4D1CA",
-    wall:  dark?"#22252B":"#E4E0D8",
-    wallS: dark?"#1C2026":"#D8D4CC",
-    shadow:"rgba(0,0,0,0.18)",
+  /* model + room */
+  if(TD.model){scene.remove(TD.model);disposeTree(TD.model);}
+  if(TD.env){scene.remove(TD.env);disposeTree(TD.env);}
+  const built=model3d(T,R,M);
+  TD.model=built.group; scene.add(TD.model);
+  TD.env=env3d(T,R,M,built); scene.add(TD.env);
+
+  /* keep the angle you chose; re-frame only when the design's size changes */
+  const spec=R.spec;
+  const sig=[spec.layout,spec.unitHeight,spec.depth,spec.walls[0].length,spec.walls[1].length].join("|");
+  const box=new T.Box3().setFromObject(TD.model);
+  const ctr=box.getCenter(new T.Vector3()), size=box.getSize(new T.Vector3());
+  if(sig!==TD.sig){
+    TD.sig=sig;
+    const radius=Math.max(size.x,size.y,size.z)*0.5;
+    TD.cam.tx=ctr.x; TD.cam.ty=ctr.y*0.92; TD.cam.tz=ctr.z;
+    TD.cam.dist=Math.max(1800,radius/Math.tan(camera.fov*Math.PI/360)*1.12);
+    TD.cam.az=HOME.az; TD.cam.pol=HOME.pol;
+  }
+
+  /* shadow frustum wrapped around the unit */
+  const span=Math.max(size.x,size.z)*0.75+size.y;
+  key.position.set(ctr.x-size.x*0.35, ctr.y+size.y*1.9+2000, ctr.z+size.z*0.5+3200);
+  key.target.position.copy(ctr);
+  const sc=key.shadow.camera;
+  sc.left=-span; sc.right=span; sc.top=span; sc.bottom=-span;
+  sc.near=100; sc.far=span*6+16000; sc.updateProjectionMatrix();
+  fill.position.set(ctr.x+size.x*0.8+2500, ctr.y+size.y, ctr.z-size.z-1500);
+
+  fit3d(); paint3d();
+
+  if(!TD.ro&&window.ResizeObserver)
+    TD.ro=new ResizeObserver(()=>{ if(document.getElementById("c3d")){fit3d();paint3d();} });
+  if(TD.ro){ TD.ro.disconnect(); TD.ro.observe(host); }
+
+  const on=(id,fn)=>{const b=document.getElementById(id); if(b)b.onclick=fn;};
+  on("c3d-reset",()=>{TD.sig="";scene3d(document.getElementById("c3d"),R);});
+  on("c3d-in", ()=>{TD.cam.dist=Math.max(600,TD.cam.dist*0.8);paint3d();});
+  on("c3d-out",()=>{TD.cam.dist=Math.min(90000,TD.cam.dist*1.25);paint3d();});
+}
+
+function disposeTree(o){ o.traverse(n=>{ if(n.geometry&&n.geometry.__own)n.geometry.dispose(); }); }
+
+function fit3d(){
+  const host=document.getElementById("c3d"); if(!host||!TD)return;
+  const w=host.clientWidth||820, h=Math.round(Math.min(560,Math.max(360,w*0.62)));
+  host.style.height=h+"px";
+  TD.renderer.setSize(w,h,false);
+  TD.camera.aspect=w/h; TD.camera.updateProjectionMatrix();
+}
+
+function paint3d(){
+  if(!TD)return;
+  const c=TD.cam, C=TD.camera, sp=Math.sin(c.pol), cp=Math.cos(c.pol);
+  C.position.set(c.tx+c.dist*sp*Math.sin(c.az), c.ty+c.dist*cp, c.tz+c.dist*sp*Math.cos(c.az));
+  C.lookAt(c.tx,c.ty,c.tz); C.updateMatrix();
+  TD.renderer.render(TD.scene,TD.camera);
+}
+
+/* Drag to rotate, wheel or pinch to zoom, shift- or right-drag to pan. */
+function orbit3d(dom){
+  const pts=new Map();
+  let mode=null,last=null,pinch=0;
+  const gap=()=>{const v=[...pts.values()];return v.length<2?0:Math.hypot(v[0].x-v[1].x,v[0].y-v[1].y);};
+
+  dom.addEventListener("pointerdown",e=>{
+    dom.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size===2){mode="pinch";pinch=gap();}
+    else{mode=(e.shiftKey||e.button===1||e.button===2)?"pan":"rot";last={x:e.clientX,y:e.clientY};dom.style.cursor="grabbing";}
+  });
+  dom.addEventListener("pointermove",e=>{
+    if(!pts.has(e.pointerId))return;
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(mode==="pinch"&&pts.size===2){
+      const g=gap();
+      if(pinch>0&&g>0){TD.cam.dist=Math.max(600,Math.min(90000,TD.cam.dist*pinch/g));paint3d();}
+      pinch=g; return;
+    }
+    if(!last)return;
+    const dx=e.clientX-last.x, dy=e.clientY-last.y;
+    last={x:e.clientX,y:e.clientY};
+    if(mode==="rot"){
+      TD.cam.az-=dx*0.0065;
+      TD.cam.pol=Math.max(0.12,Math.min(1.52,TD.cam.pol-dy*0.0065));
+    }else{
+      const C=TD.camera, m=C.matrix.elements;
+      const k=2*TD.cam.dist*Math.tan(C.fov*Math.PI/360)/(TD.renderer.domElement.clientHeight||500);
+      TD.cam.tx+=(-m[0]*dx+m[4]*dy)*k;
+      TD.cam.ty+=(-m[1]*dx+m[5]*dy)*k;
+      TD.cam.tz+=(-m[2]*dx+m[6]*dy)*k;
+    }
+    paint3d();
+  });
+  const up=e=>{ pts.delete(e.pointerId); if(pts.size<2)pinch=0;
+    if(!pts.size){mode=null;last=null;dom.style.cursor="grab";} };
+  dom.addEventListener("pointerup",up);
+  dom.addEventListener("pointercancel",up);
+  dom.addEventListener("contextmenu",e=>e.preventDefault());
+  dom.addEventListener("wheel",e=>{
+    e.preventDefault();
+    TD.cam.dist=Math.max(600,Math.min(90000,TD.cam.dist*Math.exp(e.deltaY*0.0012)));
+    paint3d();
+  },{passive:false});
+  dom.addEventListener("dblclick",()=>{TD.cam.az=HOME.az;TD.cam.pol=HOME.pol;paint3d();});
+}
+
+/* Builds the frame the way the cut list describes it: a back and a front post at
+   every upright position, front and back rails under each shelf, cross-members
+   tying the post pairs, mid battens, and a ply deck on top. */
+function model3d(T,R,M){
+  const spec=R.spec, sec=R.sec;
+  const t=sec.h, b=sec.b, D=spec.depth, H=spec.unitHeight;
+  const isL=spec.layout==="L", W0=R.walls[0]?R.walls[0].length:0;
+  const UNIT=new T.BoxGeometry(1,1,1); UNIT.__own=true;
+  const group=new T.Group();
+  const long=spec.box.orientation==="long";
+  const bf=long?spec.box.l:spec.box.w;      // tote face width
+  const bd=long?spec.box.w:spec.box.l;      // tote depth
+  let zMax=D, tone=0;
+
+  const add=(P,mat,x,y,z,w,h,d)=>{
+    if(!(w>0&&h>0&&d>0))return;
+    const m=new T.Mesh(UNIT,Array.isArray(mat)?mat[(tone++)%mat.length]:mat);
+    m.scale.set(w,h,d); m.position.set(x+w/2,y+h/2,z+d/2);
+    m.castShadow=true; m.receiveShadow=true; P.add(m);
   };
 
-  // ── Drawing primitives ─────────────────────────────────────────────────
-  function face(pts,fill){
-    g.beginPath();
-    g.moveTo(...pts[0]);
-    for(let i=1;i<pts.length;i++) g.lineTo(...pts[i]);
-    g.closePath(); g.fillStyle=fill; g.fill();
-  }
-  // Box: (x,y,z) origin, w=X extent, h=Y extent, d=Z extent
-  // Draws top + front (Z=z face) + right (X=x+w face) in painter order
-  function box(x,y,z,w,h,d,top,front,right,alpha=1){
-    g.globalAlpha=alpha;
-    // Draw order: back Z face → right X face → top → front Z face (front last = on top)
-    // Back face (Z=z+d, hidden/shadow)  
-    if(w>0&&h>0&&d>0) face([P(x,y,z+d),P(x+w,y,z+d),P(x+w,y+h,z+d),P(x,y+h,z+d)],right);
-    // Right face (X=x+w side)
-    if(d>0&&h>0) face([P(x+w,y,z),P(x+w,y,z+d),P(x+w,y+h,z+d),P(x+w,y+h,z)],right);
-    // Top face
-    if(w>0&&d>0) face([P(x,y+h,z),P(x+w,y+h,z),P(x+w,y+h,z+d),P(x,y+h,z+d)],top);
-    // Front face (Z=z, drawn last = on top of everything)
-    if(w>0&&h>0) face([P(x,y,z),P(x+w,y,z),P(x+w,y+h,z),P(x,y+h,z)],front);
-    g.globalAlpha=1;
-  }
+  R.walls.forEach((w,wi)=>{
+    if(!w||!w.bays||!w.bays.length)return;
+    const G=new T.Group();
+    // wall 1 of an L turns the corner: local u runs along +Z, depth runs back to the wall at x=W0
+    if(wi===1&&isL){ G.rotation.y=-Math.PI/2; G.position.x=W0; zMax=Math.max(zMax,w.length); }
+    group.add(G);
+    const n=w.bays.length;
+    const deckY=it=>it.h-(it.kind==="bench"?PLY*2:PLY);   // underside of deck = top of rails
 
-  // ── Scene background ───────────────────────────────────────────────────
-  // Floor
-  face([P(-200,0,-200),P(W0+200,0,-200),P(W0+200,0,D+(isL?W1:0)+200),P(-200,0,D+(isL?W1:0)+200)],W.floor);
-  // Back wall
-  face([P(-80,0,D),P(W0+80,0,D),P(W0+80,H+200,D),P(-80,H+200,D)],W.wall);
-  // Side wall for L
-  if(isL) face([P(W0,0,D),P(W0,0,D+W1+80),P(W0,H+200,D+W1+80),P(W0,H+200,D)],W.wallS);
-  // Floor shadow under unit
-  g.globalAlpha=0.18; g.fillStyle="#000";
-  face([P(0,1,0),P(W0,1,0),P(W0,1,D),P(0,1,D)]);
-  g.globalAlpha=1;
+    w.bays.forEach(bay=>{
+      const u0=bay.x0, BW=bay.W, last=bay.i===n-1;
 
-  // ── Draw one wall's bays ────────────────────────────────────────────────
-  // along=0: bays run along X (normal wall). uprights at x0, x0+W
-  // along=1: bays run along Z (right wall of L). uprights at z0, z0+W; unit at x=W0-D
-  function drawWall(w,along){
-    if(!w||!w.bays) return;
-    // Paint order: for along=0, paint right bays first (higher X = further from viewer-left)
-    // For along=1, paint further bays first (higher Z = further)
-    const bays=[...w.bays].sort((a,b)=>b.i-a.i); // right-to-left (right drawn first = behind)
+      const posts=[u0-t]; if(last)posts.push(u0+BW);
+      posts.forEach(pu=>{ add(G,M.pine,pu,0,0,t,H,b); add(G,M.pine,pu,0,D-b,t,H,b); });
 
-    bays.forEach(bay=>{
-      const BW=bay.W; // bay clear width (mm)
-      // Position in scene
-      const x0=along===0 ? bay.x0-w.offset : W0-D;
-      const z0=along===0 ? 0               : D+(bay.x0-w.offset);
-      const bwd=along===0 ? BW : D;  // bay width along X
-      const bdd=along===0 ? D  : BW; // bay depth along Z
+      // rails butt over the centre of shared posts and run flush at the ends of the run
+      const rL=u0-(bay.i===0?t:t/2), rLen=BW+(bay.i===0?t:t/2)+(last?t:t/2);
 
-      // ── Shelves (back to front in Z, so draw in reverse z order)
-      // For along=0: shelves span x0..x0+BW, z=0..D (we draw all the same)
-      // For along=1: shelves span x=W0-D..W0, z=z0..z0+BW
       bay.items.forEach(it=>{
-        const iy=it.h, ib=it.kind==="bench", th=ib?PLY*2:PLY;
-        const [cT,cF,cS]=ib?[W.bT,W.bF,W.bS]:[W.sT,W.sF,W.sS];
-        // Rail (under shelf)
-        box(x0,iy,z0, bwd,TH,bdd, W.rT,W.rF,W.rS);
-        // Board
-        box(x0,iy+TH,z0, bwd,th,bdd, cT,cF,cS);
-        // Totes
-        if(it.boxes>0&&it.kind==="shelf"&&!it.open){
-          const tH=Math.min(it.clear-25,spec.box.h);
-          const tF=spec.box.orientation==="long"?spec.box.l:spec.box.w;
-          const tD_=spec.box.orientation==="long"?spec.box.w:spec.box.l;
-          const tD=Math.min(tD_,bdd-30);
-          const totW=it.boxes*tF+(it.boxes-1)*30;
-          const pad=(bwd-totW)/2;
-          // Draw totes right-to-left (right tote behind in projection)
-          for(let j=it.boxes-1;j>=0;j--){
-            const tx=along===0?x0+pad+j*(tF+30):x0+15;
-            const tz=along===0?z0+15            :z0+pad+j*(tF+30);
-            const tw=along===0?tF:tD, td=along===0?tD:tF;
-            const ty=iy+TH+th;
-            box(tx,ty,tz, tw,tH,td, W.tT,W.tF,W.tS);
-            // Lid (top 16mm stripe)
-            box(tx,ty+tH-16,tz, tw,16,td, W.lT,W.lF,W.lS);
+        const th=it.kind==="bench"?PLY*2:PLY, ry=deckY(it)-t;
+        add(G,M.pine,rL,ry,0,rLen,t,b);
+        add(G,M.pine,rL,ry,D-b,rLen,t,b);
+        const mc=it.kind==="bench"?Math.max(2,Math.ceil(BW/450)-1)
+                                 :(BW<500?0:Math.max(1,Math.ceil(BW/700)-1));
+        for(let k=1;k<=mc;k++) add(G,M.pine,u0+BW*k/(mc+1)-b/2,ry,b,b,t,D-2*b);
+        add(G,it.kind==="bench"?M.bench:M.ply,u0,deckY(it),0,BW,th,D);
+
+        if(it.boxes>0){
+          const span=it.boxes*bf+(it.boxes-1)*GAP, pad=(BW-span)/2;
+          const vz=Math.max(10,(D-bd)/2), bh=spec.box.h, lid=Math.min(34,bh*0.18);
+          for(let k=0;k<it.boxes;k++){
+            const bx=u0+pad+k*(bf+GAP);
+            add(G,M.tote,bx,it.h,vz,bf,bh-lid,bd);
+            add(G,M.lid,bx-7,it.h+bh-lid,vz-7,bf+14,lid,bd+14);
           }
         }
-        // Pegboard for bench
-        if(ib){
-          const up=bay.items.find(i=>i.kind==="shelf"&&i.h>iy+th+100);
-          const ptop=up?up.h:iy+th+650;
-          box(x0,iy+th,z0+bdd-15, bwd,ptop-(iy+th),15, W.pT,W.pF,W.pS);
+        const I=it.insert;
+        if(I){
+          (I.tierHs||[]).forEach(ty=>{ add(G,M.pine,u0,ty,D*0.16,BW,18,95); add(G,M.pine,u0,ty,D*0.54,BW,18,95); });
+          if(I.wellyPairs) add(G,M.pine,u0,it.h+95,D-b-20,BW,t,20);
         }
       });
 
-      // ── Uprights (at bay boundaries, drawn AFTER shelves so they're in front)
-      const isLast=bay.i===w.bays.length-1;
-      const offsets=[0,...(isLast?[BW]:[])];
-      offsets.forEach(off=>{
-        if(along===0){
-          box(x0+off,0,0, TH,H,D, W.uT,W.uF,W.uS);
-        } else {
-          box(x0,0,z0+off, D,H,TH, W.uT,W.uF,W.uS);
-        }
-      });
+      bay.ties.forEach(hh=>add(G,M.pine,rL,hh-t/2,0,rLen,t,b));   // back tie rails
 
-      // ── Tall bay: simple ladder silhouette
-      if(bay.tall&&!along){
-        const lx=x0+BW*0.2, lh=H*0.88, rungW=BW*0.6;
-        box(lx,0,D*0.5-12, 25,lh,24, "#C0A878","#A88A58","#806830");
-        box(lx+rungW,0,D*0.5-12, 25,lh,24, "#C0A878","#A88A58","#806830");
-        for(let r=180;r<lh-100;r+=240){
-          box(lx+25,r,D*0.5-8, rungW-25,20,16, "#B09060","#987840","#705820");
+      if(bay.bench){
+        const bi=bay.items.find(i=>i.kind==="bench");
+        const up=bay.items.find(i=>i.kind==="shelf"&&bi&&i.h>bi.h);
+        if(bi){
+          const top=up?up.h-PLY-t:bi.h+700;
+          add(G,M.peg,u0,bi.h,b,BW,Math.max(0,top-bi.h),12);
         }
       }
     });
 
-    // Top caps: draw a continuous cap rail across the top of all uprights
-    // (this makes it look like the reference photo — clean top rail)
-    const wx=along===0?w.bays[0].x0-w.offset:W0-D;
-    const wz=along===0?0:D+(w.bays[0].x0-w.offset);
-    const lastBay=w.bays[w.bays.length-1];
-    const wEnd=along===0?lastBay.x0-w.offset+lastBay.W+TH:W0;
-    const wzEnd=along===0?D:D+(lastBay.x0-w.offset+lastBay.W+TH);
-    if(along===0) box(wx,H,0, wEnd-wx,TH,D, W.uT,W.uF,W.uS);
-    else          box(W0-D,H,wz, D,TH,wzEnd-wz, W.uT,W.uF,W.uS);
+    for(let p=0;p<=n;p++){                                       // cross-members
+      const pu=p<n?w.bays[p].x0-t:w.bays[n-1].x0+w.bays[n-1].W;
+      const ys=new Set();
+      [w.bays[p-1],w.bays[p]].forEach(bb=>{ if(!bb)return;
+        bb.items.forEach(it=>ys.add(deckY(it)-t));
+        bb.ties.forEach(hh=>ys.add(hh-t/2));
+      });
+      ys.forEach(y=>add(G,M.pine,pu+(t-b)/2,y,b,b,t,D-2*b));
+    }
+  });
+
+  return {group,W0,zMax};
+}
+
+/* The room. Every surface is single sided, so the floor, ceiling and walls
+   drop away as you orbit past them instead of hiding the shelving. */
+function env3d(T,R,M,built){
+  const spec=R.spec, isL=spec.layout==="L";
+  const W0=built.W0, zMax=built.zMax, ceil=Math.max(spec.ceiling,spec.unitHeight+150);
+  const g=new T.Group(), m=25000;
+  const plane=(w,hh,mat)=>{const q=new T.Mesh(new T.PlaneGeometry(w,hh),mat);q.geometry.__own=true;q.receiveShadow=true;g.add(q);return q;};
+
+  const fw=W0+2*m+20000, fd=zMax+2*m+20000;
+  const fl=plane(fw,fd,M.floor); fl.rotation.x=-Math.PI/2; fl.position.set(W0/2,0,zMax/2);
+  const cl=plane(fw,fd,M.ceil);  cl.rotation.x= Math.PI/2; cl.position.set(W0/2,ceil,zMax/2);
+
+  const bx0=-m, bx1=isL?W0:W0+m;                       // back wall stops at the corner on an L
+  plane(bx1-bx0,ceil,M.wall).position.set((bx0+bx1)/2,ceil/2,0);
+
+  if(isL){
+    const sz1=zMax+m;
+    const sd=plane(sz1,ceil,M.wall); sd.rotation.y=-Math.PI/2;
+    sd.position.set(W0,ceil/2,sz1/2);
   }
-
-  // ── Render walls ────────────────────────────────────────────────────────
-  // For straight: just left wall
-  // For L: draw right wall FIRST (it's behind), then left wall on top
-  if(isL&&walls[1]) drawWall(walls[1],1);
-  drawWall(walls[0],0);
-
-  // ── Note ────────────────────────────────────────────────────────────────
-  g.globalAlpha=0.35; g.fillStyle=dark?"#fff":"#000";
-  g.font=`${Math.round(CW*0.014)}px var(--font-body,system-ui,sans-serif)`;
-  g.fillText("3D view — indicative, not to scale",10,CH-10);
-  g.globalAlpha=1;
+  return g;
 }
 /* form sync */
 const F=id=>$("f-"+id), toCm=mm=>Math.round(mm)/10, toMm=v=>Math.round(parseFloat(v)*10);
